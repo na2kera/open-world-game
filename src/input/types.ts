@@ -15,6 +15,8 @@ export const BUTTON_ACTIONS = [
   'menuDown',
   'menuLeft',
   'menuRight',
+  'menuTabLeft',
+  'menuTabRight',
   'menuConfirm',
   'menuCancel',
 ] as const;

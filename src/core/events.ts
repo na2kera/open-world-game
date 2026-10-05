@@ -1,5 +1,6 @@
 import type { ControllerKind } from '../input/types';
 import type { DamageCause, MovementState } from '../player/types';
+import type { EnemyState } from '../data/enemies';
 import type { GameMode } from './GameState';
 
 /** Plain 3D position payload (copied, safe to keep). */
@@ -26,4 +27,18 @@ export interface GameEvents {
   'player:damaged': { amount: number; hp: number; cause: DamageCause };
   'player:died': { position: PositionPayload };
   'player:respawned': { position: PositionPayload; reason: 'drowned' | 'died' };
+  'inventory:changed': { itemId: string; count: number; total: number };
+  'item:acquired': { itemId: string; count: number };
+  'item:consumed': { itemId: string };
+  'weapon:equipped': { itemId: string | null };
+  'weapon:broken': { itemId: string };
+  'chest:opened': { chestId: string; itemId: string };
+  'enemy:spotted': { enemyId: string; defId: string };
+  'enemy:stateChanged': { enemyId: string; from: EnemyState; to: EnemyState };
+  'enemy:damaged': { enemyId: string; defId: string; amount: number; hp: number };
+  'enemy:killed': { enemyId: string; defId: string; position: PositionPayload };
+  'camp:cleared': { campId: string };
+  'save:started': undefined;
+  'save:completed': { reason: 'auto' | 'manual' };
+  'save:loaded': undefined;
 }

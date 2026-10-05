@@ -16,6 +16,8 @@ const SWITCH_LABELS: LabelTable = {
   menuDown: '↓',
   menuLeft: '←',
   menuRight: '→',
+  menuTabLeft: 'L',
+  menuTabRight: 'R',
   menuConfirm: 'A',
   menuCancel: 'B',
 };
@@ -34,6 +36,8 @@ const XBOX_LABELS: LabelTable = {
   menuDown: '↓',
   menuLeft: '←',
   menuRight: '→',
+  menuTabLeft: 'LB',
+  menuTabRight: 'RB',
   menuConfirm: 'B',
   menuCancel: 'A',
 };
@@ -52,6 +56,8 @@ const PLAYSTATION_LABELS: LabelTable = {
   menuDown: '↓',
   menuLeft: '←',
   menuRight: '→',
+  menuTabLeft: 'L1',
+  menuTabRight: 'R1',
   menuConfirm: '○',
   menuCancel: '✕',
 };
@@ -70,6 +76,8 @@ const KEYBOARD_LABELS: LabelTable = {
   menuDown: '↓',
   menuLeft: '←',
   menuRight: '→',
+  menuTabLeft: 'Q',
+  menuTabRight: 'E',
   menuConfirm: 'Enter',
   menuCancel: 'Backspace',
 };

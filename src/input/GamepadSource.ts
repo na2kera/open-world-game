@@ -159,8 +159,9 @@ export class GamepadSource implements InputSource {
     held.attack = down(STANDARD_BUTTON.left);
     held.jump = down(STANDARD_BUTTON.top);
     held.cameraReset = down(STANDARD_BUTTON.l);
-    // R / ZR / R3 are reserved for later phases but still count as activity.
-    down(STANDARD_BUTTON.r);
+    held.menuTabLeft = held.cameraReset;
+    held.menuTabRight = down(STANDARD_BUTTON.r);
+    // ZR / R3 are reserved for later phases but still count as activity.
     held.lockOn = down(STANDARD_BUTTON.zl);
     down(STANDARD_BUTTON.zr);
     held.inventory = down(STANDARD_BUTTON.minus);

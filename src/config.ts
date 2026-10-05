@@ -189,3 +189,38 @@ export const INPUT_CONFIG = {
   /** Holding B at least this long turns it into sprint; shorter taps dodge. */
   sprintHoldTime: 0.25,
 } as const;
+
+// ---------------------------------------------------------------------------
+// Items / interaction / menus
+// ---------------------------------------------------------------------------
+
+export const ITEM_CELL_SIZE = 128;
+export const ITEM_ACTIVE_DISTANCE = 192;
+export const INTERACTION_DISTANCE = 2.5;
+export const INTERACTION_FORWARD_DOT = 0.15;
+
+export const MENU_CONFIG = {
+  repeatDelay: 0.36,
+  repeatInterval: 0.1,
+  stickThreshold: 0.55,
+} as const;
+
+// ---------------------------------------------------------------------------
+// Combat / enemies / save
+// ---------------------------------------------------------------------------
+
+export const COMBAT_CONFIG = {
+  unarmedAttack: 1,
+  attackRange: 2.2,
+  attackArcRadians: (Math.PI * 2) / 3,
+  comboBufferSeconds: 0.28,
+  dodgeDistance: 3.5,
+  dodgeStamina: 15,
+  dodgeInvulnerability: 0.3,
+  damageInvulnerability: 0.55,
+  lockOnRange: 22,
+} as const;
+
+export const ENEMY_ACTIVE_DISTANCE = 250;
+export const ENEMY_CAMP_CELL_SIZE = 256;
+export const SAVE_INTERVAL_SEC = 60;
