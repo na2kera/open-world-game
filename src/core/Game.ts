@@ -9,6 +9,9 @@ import {
   MAX_FRAME_DT,
   MAX_PIXEL_RATIO,
 } from '../config';
+import { GamepadSource } from '../input/GamepadSource';
+import { InputManager } from '../input/InputManager';
+import { KeyboardMouseSource } from '../input/KeyboardMouseSource';
 import { EventBus } from './EventBus';
 import type { GameEvents } from './events';
 import { GameState } from './GameState';
@@ -36,6 +39,9 @@ export class Game {
   readonly state: GameState;
   readonly seed: number;
   readonly debug: boolean;
+  readonly input: InputManager;
+  readonly gamepad: GamepadSource;
+  readonly keyboardMouse: KeyboardMouseSource;
 
   private readonly systems: System[] = [];
   private rafId: number | null = null;
@@ -64,6 +70,15 @@ export class Game {
 
     this.camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, CAMERA_NEAR, CAMERA_FAR);
     this.scene.add(this.camera);
+
+    this.gamepad = new GamepadSource({
+      onConnected: (info) => this.bus.emit('input:gamepadConnected', info),
+      onDisconnected: (info) => this.bus.emit('input:gamepadDisconnected', info),
+    });
+    this.keyboardMouse = new KeyboardMouseSource(this.renderer.domElement);
+    this.input = new InputManager([this.keyboardMouse, this.gamepad], (kind) =>
+      this.bus.emit('input:activeKindChanged', { kind }),
+    );
 
     this.handleResize();
     window.addEventListener('resize', this.handleResize);
@@ -97,6 +112,7 @@ export class Game {
     window.removeEventListener('resize', this.handleResize);
     document.removeEventListener('visibilitychange', this.handleVisibility);
     for (const system of this.systems) system.dispose?.();
+    this.input.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
@@ -107,9 +123,11 @@ export class Game {
     this.lastTime = now;
     const frameDt = Math.min(Math.max(rawDt, 0), MAX_FRAME_DT);
 
+    this.input.poll(frameDt);
     this.accumulator += frameDt;
     while (this.accumulator >= FIXED_TIMESTEP) {
       this.fixedStep(FIXED_TIMESTEP);
+      this.input.consumeEdges();
       this.accumulator -= FIXED_TIMESTEP;
     }
 
@@ -119,6 +137,7 @@ export class Game {
   };
 
   private fixedStep(dt: number): void {
+    if (this.input.state.buttons.pause.pressed) this.state.togglePause();
     if (!this.state.isSimulating) return;
     for (const system of this.systems) system.update?.(dt);
   }
