@@ -15,6 +15,7 @@ import { KeyboardMouseSource } from '../input/KeyboardMouseSource';
 import { PlayerAvatar } from '../player/PlayerAvatar';
 import { PlayerController } from '../player/PlayerController';
 import { ThirdPersonCamera } from '../player/ThirdPersonCamera';
+import { Hud } from '../ui/Hud';
 import { World } from '../world/World';
 import { EventBus } from './EventBus';
 import type { GameEvents } from './events';
@@ -50,6 +51,7 @@ export class Game {
   readonly player: PlayerController;
   readonly cameraRig: ThirdPersonCamera;
   readonly avatar: PlayerAvatar;
+  readonly hud: Hud;
   /** Live position that world streaming and shadows follow (interpolated player position). */
   readonly focus = new THREE.Vector3();
 
@@ -121,6 +123,21 @@ export class Game {
     this.addSystem(this.world);
     this.addSystem(this.avatar);
 
+    this.hud = this.addSystem(
+      new Hud({
+        container,
+        player: this.player,
+        input: this.input,
+        gamepad: this.gamepad,
+        dayNight: this.world.dayNight,
+        terrain: this.world.terrain,
+        state: this.state,
+        renderer: this.renderer,
+        chunks: this.world.chunks,
+        debug: this.debug,
+      }),
+    );
+
     this.handleResize();
     window.addEventListener('resize', this.handleResize);
     document.addEventListener('visibilitychange', this.handleVisibility);
@@ -172,7 +189,7 @@ export class Game {
       this.accumulator -= FIXED_TIMESTEP;
     }
 
-    const alpha = this.accumulator / FIXED_TIMESTEP;
+    const alpha = this.state.isSimulating ? this.accumulator / FIXED_TIMESTEP : 1;
     for (const system of this.systems) system.frameUpdate?.(frameDt, alpha);
     this.renderer.render(this.scene, this.camera);
   };
