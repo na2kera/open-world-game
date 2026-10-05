@@ -6,8 +6,8 @@ const TRANSITIONS: Readonly<Record<GameMode, readonly GameMode[]>> = {
   title: ['playing'],
   playing: ['paused', 'menu', 'dialog', 'title'],
   paused: ['playing', 'title'],
-  menu: ['playing'],
-  dialog: ['playing'],
+  menu: ['playing', 'title'],
+  dialog: ['playing', 'title'],
 };
 
 /** Callback invoked after a successful mode change. */

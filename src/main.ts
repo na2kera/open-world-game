@@ -3,10 +3,10 @@ import './style.css';
 import { DEFAULT_SEED } from './config';
 import { Game } from './core/Game';
 
-/** Reads `?seed=` (integer) from the URL, falling back to the default seed. */
-function readSeed(params: URLSearchParams): number {
+/** Reads an explicit `?seed=` integer; omitted URLs may reuse the persisted world's seed. */
+function readSeed(params: URLSearchParams): number | undefined {
   const raw = params.get('seed');
-  if (raw === null) return DEFAULT_SEED;
+  if (raw === null) return undefined;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) ? parsed : DEFAULT_SEED;
 }
@@ -25,5 +25,6 @@ declare global {
 
 const params = new URLSearchParams(window.location.search);
 const debug = params.has('debug');
-const game = new Game(app, { seed: readSeed(params), debug }).start();
+const seed = readSeed(params);
+const game = new Game(app, seed === undefined ? { debug } : { seed, debug }).start();
 if (debug) window.__game = game;

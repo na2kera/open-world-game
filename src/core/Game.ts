@@ -8,14 +8,28 @@ import {
   FIXED_TIMESTEP,
   MAX_FRAME_DT,
   MAX_PIXEL_RATIO,
+  START_TIME_OF_DAY,
 } from '../config';
+import { PlayerCombat } from '../combat/PlayerCombat';
+import { EnemySpawner } from '../entities/EnemySpawner';
 import { GamepadSource } from '../input/GamepadSource';
 import { InputManager } from '../input/InputManager';
 import { KeyboardMouseSource } from '../input/KeyboardMouseSource';
+import { InteractionSystem } from '../items/InteractionSystem';
+import { Inventory } from '../items/Inventory';
+import { ItemSpawner } from '../items/ItemSpawner';
 import { PlayerAvatar } from '../player/PlayerAvatar';
 import { PlayerController } from '../player/PlayerController';
 import { ThirdPersonCamera } from '../player/ThirdPersonCamera';
+import type { SaveData } from '../save/SaveData';
+import { SaveManager } from '../save/SaveManager';
+import { SaveSystem } from '../save/SaveSystem';
+import { GameOverScreen } from '../ui/GameOverScreen';
 import { Hud } from '../ui/Hud';
+import { InventoryMenu } from '../ui/InventoryMenu';
+import { PauseMenu } from '../ui/PauseMenu';
+import { TitleScreen } from '../ui/TitleScreen';
+import { WorldLabelLayer } from '../ui/WorldLabelLayer';
 import { World } from '../world/World';
 import { EventBus } from './EventBus';
 import type { GameEvents } from './events';
@@ -51,6 +65,14 @@ export class Game {
   readonly player: PlayerController;
   readonly cameraRig: ThirdPersonCamera;
   readonly avatar: PlayerAvatar;
+  readonly inventory: Inventory;
+  readonly interactions: InteractionSystem;
+  readonly itemSpawner: ItemSpawner;
+  readonly enemies: EnemySpawner;
+  readonly combat: PlayerCombat;
+  readonly labels: WorldLabelLayer;
+  readonly saveManager: SaveManager;
+  readonly saves: SaveSystem;
   readonly hud: Hud;
   /** Live position that world streaming and shadows follow (interpolated player position). */
   readonly focus = new THREE.Vector3();
@@ -59,16 +81,17 @@ export class Game {
   private rafId: number | null = null;
   private lastTime: number | null = null;
   private accumulator = 0;
+  private readonly minimapMarkerIds = new Set<string>();
 
   constructor(
     private readonly container: HTMLElement,
     options: GameOptions = {},
   ) {
-    this.seed = options.seed ?? DEFAULT_SEED;
+    this.saveManager = new SaveManager();
+    const existingSave = this.saveManager.load();
+    this.seed = options.seed ?? existingSave?.seed ?? DEFAULT_SEED;
     this.debug = options.debug ?? false;
-    this.state = new GameState('playing', (from, to) =>
-      this.bus.emit('state:changed', { from, to }),
-    );
+    this.state = new GameState('title', (from, to) => this.bus.emit('state:changed', { from, to }));
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -112,30 +135,130 @@ export class Game {
       this.player,
     );
     this.avatar = new PlayerAvatar(this.scene, this.player);
+    this.inventory = new Inventory(this.bus);
+    this.labels = new WorldLabelLayer(container, this.camera);
+    this.hud = new Hud({
+      container,
+      bus: this.bus,
+      player: this.player,
+      input: this.input,
+      inventory: this.inventory,
+      dayNight: this.world.dayNight,
+      terrain: this.world.terrain,
+      state: this.state,
+      renderer: this.renderer,
+      chunks: this.world.chunks,
+      debug: this.debug,
+    });
+    this.interactions = new InteractionSystem(this.bus, this.player, (interactable) =>
+      this.hud.setInteractionPrompt(interactable),
+    );
+    this.itemSpawner = new ItemSpawner(
+      this.scene,
+      this.world.terrain,
+      this.seed,
+      this.focus,
+      this.inventory,
+      this.interactions,
+      this.bus,
+    );
+    this.enemies = new EnemySpawner(
+      this.scene,
+      this.world.terrain,
+      this.seed,
+      this.focus,
+      this.player,
+      this.world.dayNight,
+      this.bus,
+      this.labels,
+      this.itemSpawner,
+    );
+    this.combat = new PlayerCombat({
+      bus: this.bus,
+      player: this.player,
+      avatar: this.avatar,
+      camera: this.cameraRig,
+      input: this.input.state,
+      inventory: this.inventory,
+      getEnemies: () => this.enemies.targetableEnemies,
+      labels: this.labels,
+    });
+    this.saves = new SaveSystem({
+      bus: this.bus,
+      manager: this.saveManager,
+      createData: () => this.createSaveData(),
+      applyData: (data) => this.applySaveData(data),
+    });
 
-    // Order matters: simulate player, then per frame move the camera, follow with streaming /
-    // lighting, and finally pose the avatar.
+    // Fixed simulation: player input first, then combat/enemies and finally time/autosave.
     this.addSystem(this.player);
+    this.addSystem(this.combat);
+    this.addSystem(this.enemies);
     this.addSystem(this.cameraRig);
+    this.addSystem(this.saves);
+    // Render-frame order: camera/focus, streaming, visuals, interaction projection and HUD.
     this.addSystem({
       frameUpdate: (_frameDt, alpha) => this.player.getInterpolatedPosition(alpha, this.focus),
     });
     this.addSystem(this.world);
     this.addSystem(this.avatar);
-
-    this.hud = this.addSystem(
-      new Hud({
+    this.addSystem(this.itemSpawner);
+    this.addSystem(this.interactions);
+    this.addSystem(this.labels);
+    this.addSystem({
+      frameUpdate: () => {
+        this.hud.setCombatActive(this.combat.isInCombat);
+        this.updateMinimapMarkers();
+      },
+    });
+    this.addSystem(this.hud);
+    this.addSystem(
+      new InventoryMenu(
         container,
-        player: this.player,
-        input: this.input,
-        gamepad: this.gamepad,
-        dayNight: this.world.dayNight,
-        terrain: this.world.terrain,
-        state: this.state,
-        renderer: this.renderer,
-        chunks: this.world.chunks,
-        debug: this.debug,
-      }),
+        this.bus,
+        this.state,
+        this.input,
+        this.inventory,
+        this.player,
+        () => this.saves.save('auto'),
+      ),
+    );
+    this.addSystem(
+      new PauseMenu(
+        container,
+        this.state,
+        this.input,
+        this.saveManager,
+        () => {
+          this.saves.save('manual');
+        },
+        () => {
+          this.saves.load();
+        },
+        () => this.returnToTitle(),
+      ),
+    );
+    this.addSystem(
+      new GameOverScreen(
+        container,
+        this.bus,
+        this.state,
+        this.player,
+        this.world.spawnPoint,
+        () => this.saves.lastSavePoint,
+      ),
+    );
+    this.addSystem(
+      new TitleScreen(
+        container,
+        this.state,
+        this.input,
+        this.camera,
+        this.world.spawnPoint,
+        this.saveManager,
+        () => this.startNewGame(),
+        () => this.continueGame(),
+      ),
     );
 
     this.handleResize();
@@ -198,6 +321,100 @@ export class Game {
     if (this.input.state.buttons.pause.pressed) this.state.togglePause();
     if (!this.state.isSimulating) return;
     for (const system of this.systems) system.update?.(dt);
+  }
+
+  private createSaveData(): SaveData {
+    const position = this.player.position;
+    return {
+      version: 1,
+      seed: this.seed,
+      player: {
+        position: { x: position.x, y: position.y, z: position.z },
+        hp: this.player.stats.hp,
+        maxHp: this.player.stats.maxHp,
+        maxStamina: this.player.stats.maxStamina,
+      },
+      inventory: this.inventory.toJSON(),
+      equippedWeapon: this.inventory.equippedWeaponId,
+      timeOfDay: this.world.dayNight.timeOfDay,
+      day: this.world.dayNight.elapsedDays,
+      collectedItemIds: [...this.itemSpawner.collectedItemIds],
+      openedChestIds: [...this.itemSpawner.openedChestIds],
+      clearedCamps: this.enemies.campProgress,
+      quests: {},
+      story: {},
+    };
+  }
+
+  private applySaveData(data: SaveData): void {
+    this.inventory.restore(data.inventory);
+    this.inventory.equipWeapon(data.equippedWeapon);
+    this.world.dayNight.setTimeOfDay(data.timeOfDay, data.day);
+    this.itemSpawner.reset();
+    this.enemies.reset();
+    this.itemSpawner.restoreProgress(data.collectedItemIds, data.openedChestIds);
+    this.enemies.restoreProgress(data.clearedCamps);
+    this.player.placeAt(data.player.position);
+    this.player.restoreVitals(data.player.hp, data.player.maxHp, data.player.maxStamina);
+    this.cameraRig.resetBehindPlayer();
+  }
+
+  private startNewGame(): void {
+    this.saveManager.clear();
+    this.saves.resetSavePoint();
+    this.inventory.clear();
+    this.inventory.add('wooden-stick');
+    this.inventory.add('apple', 3);
+    this.inventory.equipWeapon('wooden-stick');
+    this.itemSpawner.reset();
+    this.enemies.reset();
+    this.world.dayNight.setTimeOfDay(START_TIME_OF_DAY, 0);
+    this.player.reviveAt(this.world.spawnPoint);
+    this.state.set('playing');
+  }
+
+  private continueGame(): void {
+    if (!this.saves.load()) return;
+    this.state.set('playing');
+  }
+
+  private returnToTitle(): void {
+    this.combat.reset();
+    this.state.set('title');
+    if (document.pointerLockElement) void document.exitPointerLock();
+  }
+
+  private updateMinimapMarkers(): void {
+    const next = new Set<string>();
+    for (const camp of this.enemies.campMarkers) {
+      if (camp.cleared) continue;
+      const id = `camp-marker:${camp.id}`;
+      next.add(id);
+      this.hud.upsertMinimapMarker({
+        id,
+        x: camp.x,
+        z: camp.z,
+        color: '#e84242',
+        shape: 'dot',
+      });
+    }
+    for (const chest of this.itemSpawner.activeChests) {
+      if (chest.isOpened) continue;
+      const id = `chest-marker:${chest.id}`;
+      next.add(id);
+      this.hud.upsertMinimapMarker({
+        id,
+        x: chest.position.x,
+        z: chest.position.z,
+        color: '#f1cc64',
+        shape: 'chest',
+      });
+    }
+    for (const id of this.minimapMarkerIds) {
+      if (!next.has(id)) this.hud.removeMinimapMarker(id);
+    }
+    this.minimapMarkerIds.clear();
+    for (const id of next) this.minimapMarkerIds.add(id);
   }
 
   private readonly handleResize = (): void => {
