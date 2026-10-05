@@ -12,6 +12,9 @@ import {
 import { GamepadSource } from '../input/GamepadSource';
 import { InputManager } from '../input/InputManager';
 import { KeyboardMouseSource } from '../input/KeyboardMouseSource';
+import { PlayerAvatar } from '../player/PlayerAvatar';
+import { PlayerController } from '../player/PlayerController';
+import { ThirdPersonCamera } from '../player/ThirdPersonCamera';
 import { World } from '../world/World';
 import { EventBus } from './EventBus';
 import type { GameEvents } from './events';
@@ -44,7 +47,10 @@ export class Game {
   readonly gamepad: GamepadSource;
   readonly keyboardMouse: KeyboardMouseSource;
   readonly world: World;
-  /** Live position that world streaming and shadows follow. */
+  readonly player: PlayerController;
+  readonly cameraRig: ThirdPersonCamera;
+  readonly avatar: PlayerAvatar;
+  /** Live position that world streaming and shadows follow (interpolated player position). */
   readonly focus = new THREE.Vector3();
 
   private readonly systems: System[] = [];
@@ -87,10 +93,33 @@ export class Game {
 
     this.world = new World(this.scene, this.seed, this.focus, this.camera);
     this.focus.copy(this.world.spawnPoint);
-    this.camera.position.copy(this.focus).add(new THREE.Vector3(0, 8, 14));
-    this.camera.lookAt(this.focus);
     this.world.preload();
+
+    this.player = new PlayerController({
+      terrain: this.world.terrain,
+      collision: this.world.collision,
+      input: this.input.state,
+      bus: this.bus,
+      getCameraYaw: () => this.cameraRig.yaw,
+      spawnPoint: this.world.spawnPoint,
+    });
+    this.cameraRig = new ThirdPersonCamera(
+      this.camera,
+      this.input.state,
+      this.world.terrain,
+      this.player,
+    );
+    this.avatar = new PlayerAvatar(this.scene, this.player);
+
+    // Order matters: simulate player, then per frame move the camera, follow with streaming /
+    // lighting, and finally pose the avatar.
+    this.addSystem(this.player);
+    this.addSystem(this.cameraRig);
+    this.addSystem({
+      frameUpdate: (_frameDt, alpha) => this.player.getInterpolatedPosition(alpha, this.focus),
+    });
     this.addSystem(this.world);
+    this.addSystem(this.avatar);
 
     this.handleResize();
     window.addEventListener('resize', this.handleResize);

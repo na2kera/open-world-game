@@ -48,10 +48,10 @@ const NIGHT: PaletteSpec = {
   skyHorizon: 0x1b2a4c,
   fog: 0x17223c,
   light: 0x8ea6d8,
-  lightIntensity: 0.35,
+  lightIntensity: 0.6,
   hemiSky: 0x2a3a66,
   hemiGround: 0x0d0f18,
-  hemiIntensity: 0.4,
+  hemiIntensity: 1.1,
   starOpacity: 1,
   daylight: 0.1,
 };
@@ -63,7 +63,7 @@ const DAWN: PaletteSpec = {
   lightIntensity: 0.6,
   hemiSky: 0x8899cc,
   hemiGround: 0x4a3a30,
-  hemiIntensity: 0.55,
+  hemiIntensity: 1.3,
   starOpacity: 0.15,
   daylight: 0.5,
 };
@@ -75,7 +75,7 @@ const MORNING: PaletteSpec = {
   lightIntensity: 2.2,
   hemiSky: 0xbcd7f5,
   hemiGround: 0x5f6b45,
-  hemiIntensity: 1.2,
+  hemiIntensity: 2.4,
   starOpacity: 0,
   daylight: 1,
 };
@@ -87,7 +87,7 @@ const NOON: PaletteSpec = {
   lightIntensity: 2.8,
   hemiSky: 0xc6defa,
   hemiGround: 0x667345,
-  hemiIntensity: 1.25,
+  hemiIntensity: 2.5,
   starOpacity: 0,
   daylight: 1,
 };
@@ -99,7 +99,7 @@ const EVENING: PaletteSpec = {
   lightIntensity: 2,
   hemiSky: 0xb0c4e8,
   hemiGround: 0x5a5a3c,
-  hemiIntensity: 1.1,
+  hemiIntensity: 2.2,
   starOpacity: 0,
   daylight: 0.95,
 };
@@ -111,7 +111,7 @@ const DUSK: PaletteSpec = {
   lightIntensity: 0.6,
   hemiSky: 0x6a6aa0,
   hemiGround: 0x3a2c2a,
-  hemiIntensity: 0.5,
+  hemiIntensity: 1.2,
   starOpacity: 0.3,
   daylight: 0.45,
 };

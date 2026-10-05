@@ -1,4 +1,5 @@
 import type { ControllerKind } from '../input/types';
+import type { DamageCause, MovementState } from '../player/types';
 import type { GameMode } from './GameState';
 
 /** Plain 3D position payload (copied, safe to keep). */
@@ -14,4 +15,15 @@ export interface GameEvents {
   'input:gamepadConnected': { index: number; id: string; kind: ControllerKind };
   'input:gamepadDisconnected': { index: number; id: string; kind: ControllerKind };
   'input:activeKindChanged': { kind: ControllerKind };
+  'player:stateChanged': { from: MovementState; to: MovementState };
+  'player:jumped': { position: PositionPayload };
+  'player:landed': { position: PositionPayload; fallHeight: number };
+  /** Attack button pressed (combat logic is added in a later phase). */
+  'player:attack': { position: PositionPayload; facing: number };
+  /** Dodge button pressed (combat logic is added in a later phase). */
+  'player:dodge': { position: PositionPayload; facing: number };
+  'player:interact': { position: PositionPayload; facing: number };
+  'player:damaged': { amount: number; hp: number; cause: DamageCause };
+  'player:died': { position: PositionPayload };
+  'player:respawned': { position: PositionPayload; reason: 'drowned' | 'died' };
 }
