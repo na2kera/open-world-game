@@ -2,26 +2,32 @@ import './hud.css';
 
 import type { WebGLRenderer } from 'three';
 
+import type { EventBus } from '../core/EventBus';
+import type { GameEvents } from '../core/events';
 import type { GameState } from '../core/GameState';
 import type { System } from '../core/System';
+import { getItemDef } from '../data/items';
 import { getButtonLabel, getSprintLabel } from '../input/buttonLabels';
-import type { GamepadSource } from '../input/GamepadSource';
 import type { InputManager } from '../input/InputManager';
 import type { ControllerKind } from '../input/types';
+import type { Interactable } from '../items/Interactable';
+import type { Inventory } from '../items/Inventory';
 import type { PlayerController } from '../player/PlayerController';
 import type { DayNightCycle } from '../world/DayNightCycle';
 import type { TerrainChunkManager } from '../world/TerrainChunkManager';
 import type { Terrain } from '../world/Terrain';
 import { HeartsDisplay } from './HeartsDisplay';
-import { Minimap } from './Minimap';
+import { createItemIcon } from './InventoryMenu';
+import { Minimap, type MinimapMarker } from './Minimap';
 import { StaminaWheel } from './StaminaWheel';
 
 /** Dependencies of {@link Hud}. */
 export interface HudDeps {
   container: HTMLElement;
+  bus: EventBus<GameEvents>;
   player: PlayerController;
   input: InputManager;
-  gamepad: GamepadSource;
+  inventory: Inventory;
   dayNight: DayNightCycle;
   terrain: Terrain;
   state: GameState;
@@ -47,8 +53,19 @@ export class Hud implements System {
   private readonly clock = document.createElement('div');
   private readonly hints = document.createElement('div');
   private readonly debugLine = document.createElement('div');
-  private readonly startOverlay = document.createElement('div');
-  private readonly pauseOverlay = document.createElement('div');
+  private readonly interactionPrompt = document.createElement('div');
+  private readonly toast = document.createElement('div');
+  private readonly weapon = document.createElement('div');
+  private readonly damageVignette = document.createElement('div');
+  private readonly saveIcon = document.createElement('div');
+  private readonly unsubscribers: (() => void)[] = [];
+  private readonly toastQueue: string[] = [];
+  private interaction: Interactable | null = null;
+  private combatActive = false;
+  private toastTimer = 0;
+  private damageTimer = 0;
+  private saveTimer = 0;
+  private shownWeapon = '';
   private shownKind: ControllerKind | null = null;
   private shownClock = '';
   private frames = 0;
@@ -67,24 +84,49 @@ export class Hud implements System {
     this.debugLine.className = 'hud-debug';
     this.debugLine.hidden = !deps.debug;
 
-    this.startOverlay.className = 'hud-overlay hud-start';
-    this.startOverlay.textContent = 'コントローラーのボタンを押すか、画面をクリックして開始';
-    this.pauseOverlay.className = 'hud-overlay hud-pause';
-    this.pauseOverlay.textContent = '一時停止中';
+    this.interactionPrompt.className = 'hud-interaction hud-panel';
+    this.interactionPrompt.hidden = true;
+    this.toast.className = 'hud-toast';
+    this.toast.hidden = true;
+    this.weapon.className = 'hud-weapon hud-panel';
+    this.damageVignette.className = 'hud-damage-vignette';
+    this.saveIcon.className = 'hud-save-icon hud-panel';
+    this.saveIcon.textContent = '◇ セーブ中';
+    this.saveIcon.hidden = true;
 
     this.root.append(
       this.hearts.element,
       this.stamina.element,
       corner,
       this.debugLine,
-      this.startOverlay,
-      this.pauseOverlay,
+      this.interactionPrompt,
+      this.toast,
+      this.weapon,
+      this.damageVignette,
+      this.saveIcon,
     );
     deps.container.appendChild(this.root);
+    this.unsubscribers.push(
+      deps.bus.on('item:acquired', ({ itemId, count }) => {
+        const name = getItemDef(itemId)?.name ?? itemId;
+        this.enqueueToast(`${name}${count > 1 ? ` ×${count}` : ''} を手に入れた！`);
+      }),
+      deps.bus.on('weapon:broken', ({ itemId }) => {
+        const name = getItemDef(itemId)?.name ?? itemId;
+        this.enqueueToast(`${name} が壊れた…`);
+      }),
+      deps.bus.on('player:damaged', () => {
+        this.damageTimer = 0.28;
+      }),
+      deps.bus.on('save:started', () => {
+        this.saveTimer = 1.2;
+      }),
+    );
   }
 
   frameUpdate(frameDt: number): void {
-    const { player, input, gamepad, dayNight, state } = this.deps;
+    const { player, input, dayNight, state } = this.deps;
+    this.root.hidden = state.mode === 'title';
     const stats = player.stats;
     this.hearts.update(stats.hp, stats.maxHp);
     this.stamina.update(frameDt, stats.stamina, stats.maxStamina, stats.staminaExhausted);
@@ -96,25 +138,59 @@ export class Hud implements System {
       this.clock.textContent = clock;
     }
 
-    if (input.activeKind !== this.shownKind) this.renderHints(input.activeKind);
-
-    this.startOverlay.hidden = input.hasReceivedInput || gamepad.isConnected;
-    this.pauseOverlay.hidden = state.mode !== 'paused';
+    const contextKey = `${input.activeKind}:${this.interaction?.promptLabel ?? ''}:${this.combatActive}`;
+    if (contextKey !== `${this.shownKind}:${this.hints.dataset['context'] ?? ''}`) {
+      this.renderHints(input.activeKind);
+      this.hints.dataset['context'] = `${this.interaction?.promptLabel ?? ''}:${this.combatActive}`;
+    }
+    this.renderInteraction();
+    this.renderWeapon();
+    this.updateTransient(frameDt);
 
     if (this.deps.debug) this.updateDebug(frameDt);
   }
 
   dispose(): void {
+    for (const unsubscribe of this.unsubscribers) unsubscribe();
     this.root.remove();
+  }
+
+  setInteractionPrompt(interactable: Interactable | null): void {
+    this.interaction = interactable;
+    this.shownKind = null;
+  }
+
+  setCombatActive(active: boolean): void {
+    if (this.combatActive === active) return;
+    this.combatActive = active;
+    this.shownKind = null;
+  }
+
+  upsertMinimapMarker(marker: MinimapMarker): void {
+    this.minimap.upsertMarker(marker);
+  }
+
+  removeMinimapMarker(id: string): void {
+    this.minimap.removeMarker(id);
+  }
+
+  enqueueToast(message: string): void {
+    this.toastQueue.push(message);
+    if (this.toast.hidden) this.showNextToast();
   }
 
   private renderHints(kind: ControllerKind): void {
     this.shownKind = kind;
     const items: [string, string][] = [
+      [getButtonLabel('attack', kind), '攻撃'],
       [getButtonLabel('jump', kind), 'ジャンプ'],
       [getSprintLabel(kind), 'ダッシュ'],
-      [getButtonLabel('cameraReset', kind), 'カメラリセット'],
+      [getButtonLabel('inventory', kind), '所持品'],
     ];
+    if (this.interaction) {
+      items.unshift([getButtonLabel('interact', kind), this.interaction.promptLabel]);
+    }
+    if (this.combatActive) items.push([getButtonLabel('lockOn', kind), '注目']);
     this.hints.replaceChildren(
       ...items.map(([label, text]) => {
         const item = document.createElement('span');
@@ -126,6 +202,53 @@ export class Hud implements System {
         return item;
       }),
     );
+  }
+
+  private renderInteraction(): void {
+    const interaction = this.interaction;
+    this.interactionPrompt.hidden = interaction === null;
+    if (!interaction) return;
+    this.interactionPrompt.textContent = `${getButtonLabel('interact', this.deps.input.activeKind)} ${interaction.promptLabel}`;
+  }
+
+  private renderWeapon(): void {
+    const entry = this.deps.inventory.equippedWeapon;
+    const key = entry ? `${entry.itemId}:${entry.durability ?? ''}` : 'none';
+    if (key === this.shownWeapon) return;
+    this.shownWeapon = key;
+    this.weapon.replaceChildren();
+    if (!entry) {
+      this.weapon.hidden = true;
+      return;
+    }
+    const def = getItemDef(entry.itemId);
+    this.weapon.hidden = false;
+    const icon = createItemIcon(def);
+    const text = document.createElement('span');
+    text.textContent = `${def?.name ?? entry.itemId}${entry.durability === null ? '' : ` / 耐久 ${entry.durability}`}`;
+    this.weapon.append(icon, text);
+  }
+
+  private updateTransient(frameDt: number): void {
+    if (!this.toast.hidden) {
+      this.toastTimer -= frameDt;
+      if (this.toastTimer <= 0) {
+        this.toast.hidden = true;
+        this.showNextToast();
+      }
+    }
+    this.damageTimer = Math.max(0, this.damageTimer - frameDt);
+    this.damageVignette.classList.toggle('is-visible', this.damageTimer > 0);
+    this.saveTimer = Math.max(0, this.saveTimer - frameDt);
+    this.saveIcon.hidden = this.saveTimer <= 0;
+  }
+
+  private showNextToast(): void {
+    const message = this.toastQueue.shift();
+    if (!message) return;
+    this.toast.textContent = message;
+    this.toastTimer = 2.1;
+    this.toast.hidden = false;
   }
 
   private updateDebug(frameDt: number): void {

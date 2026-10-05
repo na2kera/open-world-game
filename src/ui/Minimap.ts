@@ -38,6 +38,17 @@ const RGBA = 4;
 
 const tmpColor = new Color();
 
+export type MinimapMarkerShape = 'dot' | 'diamond' | 'chest' | 'quest';
+
+export interface MinimapMarker {
+  readonly id: string;
+  x: number;
+  z: number;
+  color: string;
+  shape: MinimapMarkerShape;
+  visible?: boolean;
+}
+
 /**
  * Corner minimap: the whole world is rendered once (progressively) into a small biome-coloured,
  * hill-shaded canvas, then a window around the player is drawn every frame (north up).
@@ -52,6 +63,7 @@ export class Minimap {
   private readonly previousRow = new Float32Array(MAP_RESOLUTION);
   private nextRow = 0;
   private readonly pixelRatio: number;
+  private readonly markers = new Map<string, MinimapMarker>();
 
   constructor(private readonly terrain: Terrain) {
     this.element.className = 'hud-minimap';
@@ -78,6 +90,19 @@ export class Minimap {
   /** True once the whole world map has been rendered. */
   get isComplete(): boolean {
     return this.nextRow >= MAP_RESOLUTION;
+  }
+
+  /** Adds or replaces a world-space marker. The same API is reusable for Phase 2b quests. */
+  upsertMarker(marker: MinimapMarker): void {
+    this.markers.set(marker.id, marker);
+  }
+
+  removeMarker(id: string): void {
+    this.markers.delete(id);
+  }
+
+  clearMarkers(): void {
+    this.markers.clear();
   }
 
   /** Renders a few more world-map rows, then draws the view around (x, z). */
@@ -138,6 +163,7 @@ export class Minimap {
     ctx.fillRect(0, 0, size, size);
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(this.source, sx, sy, sourceRadius * 2, sourceRadius * 2, 0, 0, size, size);
+    this.drawMarkers(x, z);
 
     // Player arrow: drawn pointing up, rotated so it matches the facing (screen y = world +z).
     const arrow = ARROW_SIZE * this.pixelRatio;
@@ -156,5 +182,38 @@ export class Minimap {
     ctx.fill();
     ctx.stroke();
     ctx.restore();
+  }
+
+  private drawMarkers(x: number, z: number): void {
+    const ctx = this.context;
+    const size = this.canvas.width;
+    const scale = size / (VIEW_RADIUS * 2);
+    for (const marker of this.markers.values()) {
+      if (marker.visible === false) continue;
+      const px = size / 2 + (marker.x - x) * scale;
+      const py = size / 2 + (marker.z - z) * scale;
+      if (px < 0 || px > size || py < 0 || py > size) continue;
+      const radius = (marker.shape === 'quest' ? 5 : 3.5) * this.pixelRatio;
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.fillStyle = marker.color;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+      ctx.lineWidth = this.pixelRatio;
+      ctx.beginPath();
+      if (marker.shape === 'diamond' || marker.shape === 'quest') {
+        ctx.moveTo(0, -radius);
+        ctx.lineTo(radius, 0);
+        ctx.lineTo(0, radius);
+        ctx.lineTo(-radius, 0);
+        ctx.closePath();
+      } else if (marker.shape === 'chest') {
+        ctx.rect(-radius, -radius * 0.65, radius * 2, radius * 1.3);
+      } else {
+        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      }
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 }
