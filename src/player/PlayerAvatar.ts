@@ -10,6 +10,7 @@ import {
 
 import { PLAYER_CONFIG } from '../config';
 import type { System } from '../core/System';
+import { getItemDef } from '../data/items';
 import { damp } from '../utils/math';
 import type { PlayerController } from './PlayerController';
 
@@ -132,11 +133,16 @@ export class PlayerAvatar implements System {
   private readonly rightArm = new Group();
   private readonly leftLeg = new Group();
   private readonly rightLeg = new Group();
+  private readonly weaponAttach = new Group();
   private readonly geometries: BufferGeometry[] = [];
   private readonly materials: MeshStandardMaterial[] = [];
   private readonly pose = createPose();
   private readonly target = createPose();
   private phase = 0;
+  private attackProgress = 0;
+  private attackDirection: -1 | 0 | 1 = 1;
+  private attackActive = false;
+  private weaponMesh: Mesh | null = null;
 
   constructor(
     scene: Scene,
@@ -179,7 +185,36 @@ export class PlayerAvatar implements System {
     this.rightLeg.rotation.x = p.rightLegX;
   }
 
+  setWeapon(itemId: string | null): void {
+    if (this.weaponMesh) {
+      this.weaponMesh.geometry.dispose();
+      const material = this.weaponMesh.material;
+      if (Array.isArray(material)) material.forEach((entry) => entry.dispose());
+      else material.dispose();
+      this.weaponMesh.removeFromParent();
+      this.weaponMesh = null;
+    }
+    if (!itemId || getItemDef(itemId)?.category !== 'weapon') return;
+    const geometry = new BoxGeometry(0.07, 0.82, 0.08);
+    const material = new MeshStandardMaterial({
+      color: itemId === 'wooden-stick' || itemId === 'bokoblin-club' ? 0x7a4a28 : 0xb8c4ce,
+      roughness: 0.4,
+      metalness: itemId === 'wooden-stick' || itemId === 'bokoblin-club' ? 0 : 0.65,
+    });
+    this.weaponMesh = new Mesh(geometry, material);
+    this.weaponMesh.position.y = -0.42;
+    this.weaponMesh.castShadow = true;
+    this.weaponAttach.add(this.weaponMesh);
+  }
+
+  setAttackPose(progress: number, direction: -1 | 0 | 1, active: boolean): void {
+    this.attackProgress = Math.min(1, Math.max(0, progress));
+    this.attackDirection = direction;
+    this.attackActive = active;
+  }
+
   dispose(): void {
+    this.setWeapon(null);
     for (const geometry of this.geometries) geometry.dispose();
     for (const material of this.materials) material.dispose();
     this.root.removeFromParent();
@@ -236,6 +271,12 @@ export class PlayerAvatar implements System {
         t.rightLegX = -Math.sin(this.phase * 2) * ANIM.swimKick;
         break;
       }
+    }
+    if (this.attackActive) {
+      const swing = Math.sin(this.attackProgress * Math.PI);
+      t.bodyPitch = Math.max(t.bodyPitch, 0.12 * swing);
+      t.rightArmX = -1.15 - swing * 1.15;
+      t.rightArmZ = this.attackDirection * (1.15 - this.attackProgress * 2.3);
     }
   }
 
@@ -295,6 +336,9 @@ export class PlayerAvatar implements System {
       box(BODY.arm, tunic, arm, 0, -BODY.arm[1] / 2 + 0.04);
       box([BODY.arm[0], 0.12, BODY.arm[2]], skin, arm, 0, -BODY.arm[1] + 0.02);
     }
+    this.weaponAttach.position.set(0, -BODY.arm[1], 0);
+    this.weaponAttach.rotation.z = Math.PI;
+    this.rightArm.add(this.weaponAttach);
     for (const [leg, side] of [
       [this.leftLeg, 1],
       [this.rightLeg, -1],

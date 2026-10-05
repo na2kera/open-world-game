@@ -17,20 +17,22 @@ export interface StaminaConfig {
  */
 export class Stamina {
   value: number;
+  private maxValue: number;
   private sinceDrain = Number.POSITIVE_INFINITY;
   private lockTimer = 0;
 
   constructor(private readonly config: StaminaConfig = STAMINA_CONFIG) {
     this.value = config.max;
+    this.maxValue = config.max;
   }
 
   get max(): number {
-    return this.config.max;
+    return this.maxValue;
   }
 
   /** Fill fraction in [0, 1]. */
   get ratio(): number {
-    return this.value / this.config.max;
+    return this.value / this.maxValue;
   }
 
   /** True during the lockout after running out. */
@@ -44,7 +46,7 @@ export class Stamina {
   }
 
   get isFull(): boolean {
-    return this.value >= this.config.max;
+    return this.value >= this.maxValue;
   }
 
   /**
@@ -58,7 +60,7 @@ export class Stamina {
     }
     this.sinceDrain += dt;
     if (this.sinceDrain >= this.config.regenDelay) {
-      this.value = Math.min(this.config.max, this.value + this.config.regen * dt);
+      this.value = Math.min(this.maxValue, this.value + this.config.regen * dt);
     }
     return false;
   }
@@ -71,9 +73,21 @@ export class Stamina {
 
   /** Restores full stamina and clears exhaustion. */
   refill(): void {
-    this.value = this.config.max;
+    this.value = this.maxValue;
     this.lockTimer = 0;
     this.sinceDrain = Number.POSITIVE_INFINITY;
+  }
+
+  /** Restores a persisted value, clamped to the configured maximum. */
+  setValue(value: number): void {
+    this.value = Math.min(this.maxValue, Math.max(0, value));
+    this.lockTimer = 0;
+    this.sinceDrain = Number.POSITIVE_INFINITY;
+  }
+
+  setMax(max: number): void {
+    this.maxValue = Math.max(1, max);
+    this.value = Math.min(this.value, this.maxValue);
   }
 
   private spend(amount: number): boolean {

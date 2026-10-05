@@ -1,6 +1,6 @@
 import { Vector2, Vector3 } from 'three';
 
-import { PLAYER_CONFIG, STAMINA_CONFIG, WATER_LEVEL } from '../config';
+import { COMBAT_CONFIG, PLAYER_CONFIG, STAMINA_CONFIG, WATER_LEVEL } from '../config';
 import type { EventBus } from '../core/EventBus';
 import type { GameEvents, PositionPayload } from '../core/events';
 import type { System } from '../core/System';
@@ -88,6 +88,7 @@ export class PlayerController implements System {
   /** Stick magnitude used this step (0..1). */
   moveAmount = 0;
   isSprinting = false;
+  isDead = false;
   readonly stamina = new Stamina();
   readonly stats: PlayerStats = {
     hp: PLAYER_CONFIG.maxHpQuarters,
@@ -105,6 +106,8 @@ export class PlayerController implements System {
   private fallStartY = 0;
   private safeTimer = 0;
   private drain = 0;
+  private invulnerabilityTimer = 0;
+  private combatFacingTarget: Readonly<Vec3Like> | null = null;
 
   constructor(private readonly deps: PlayerControllerDeps) {
     this.spawn.set(deps.spawnPoint.x, deps.spawnPoint.y, deps.spawnPoint.z);
@@ -133,23 +136,80 @@ export class PlayerController implements System {
     this.setState('ground');
   }
 
-  /** Applies damage in quarter hearts; handles death and respawn. */
+  /** Applies damage in quarter hearts; death recovery is handled by the game-over system. */
   applyDamage(amount: number, cause: DamageCause): void {
-    if (amount <= 0) return;
+    if (amount <= 0 || this.isDead || this.invulnerabilityTimer > 0) return;
     this.stats.hp = Math.max(0, this.stats.hp - amount);
     this.deps.bus.emit('player:damaged', { amount, hp: this.stats.hp, cause });
     if (this.stats.hp === 0) {
+      this.isDead = true;
       this.deps.bus.emit('player:died', { position: payload(this.position) });
-      this.stats.hp = this.stats.maxHp;
-      this.stamina.refill();
-      this.placeAt(this.spawn);
-      this.deps.bus.emit('player:respawned', { position: payload(this.position), reason: 'died' });
+    } else {
+      this.grantInvulnerability(COMBAT_CONFIG.damageInvulnerability);
+    }
+  }
+
+  heal(amount: number): number {
+    if (amount <= 0 || this.isDead) return 0;
+    const before = this.stats.hp;
+    this.stats.hp = Math.min(this.stats.maxHp, this.stats.hp + amount);
+    return this.stats.hp - before;
+  }
+
+  grantInvulnerability(seconds: number): void {
+    this.invulnerabilityTimer = Math.max(this.invulnerabilityTimer, seconds);
+  }
+
+  get isInvulnerable(): boolean {
+    return this.invulnerabilityTimer > 0;
+  }
+
+  /** Restores persisted vitals without emitting gameplay events. */
+  restoreVitals(hp: number, maxHp: number, maxStamina: number): void {
+    this.stats.maxHp = Math.max(1, maxHp);
+    this.stats.hp = clamp(hp, 0, this.stats.maxHp);
+    this.stamina.setMax(maxStamina);
+    this.stamina.refill();
+    this.syncStats();
+  }
+
+  /** Completes the delayed death flow at a save point. */
+  reviveAt(point: Readonly<Vec3Like>): void {
+    this.isDead = false;
+    this.stats.hp = this.stats.maxHp;
+    this.stamina.refill();
+    this.invulnerabilityTimer = 1;
+    this.placeAt(point);
+    this.deps.bus.emit('player:respawned', { position: payload(this.position), reason: 'died' });
+  }
+
+  /** Combat movement that still respects static collision and the world edge. */
+  dash(directionX: number, directionZ: number, distance: number): void {
+    const length = Math.hypot(directionX, directionZ);
+    if (length <= 0 || this.isDead) return;
+    this.position.x += (directionX / length) * distance;
+    this.position.z += (directionZ / length) * distance;
+    this.deps.collision.resolve(this.position, PLAYER_CONFIG.radius);
+    this.clampToWorld();
+    this.previousPosition.copy(this.position);
+  }
+
+  setCombatFacing(target: Readonly<Vec3Like> | null): void {
+    this.combatFacingTarget = target;
+    if (target) {
+      this.facing = Math.atan2(target.x - this.position.x, target.z - this.position.z);
     }
   }
 
   update(dt: number): void {
     this.previousPosition.copy(this.position);
     this.previousFacing = this.facing;
+    this.invulnerabilityTimer = Math.max(0, this.invulnerabilityTimer - dt);
+    if (this.isDead) {
+      this.velocity.set(0, 0, 0);
+      this.horizontal.set(0, 0);
+      return;
+    }
     const input = this.deps.input;
     const buttons = input.buttons;
 
@@ -489,6 +549,13 @@ export class PlayerController implements System {
   }
 
   private updateFacing(dt: number): void {
+    if (this.combatFacingTarget) {
+      this.facing = Math.atan2(
+        this.combatFacingTarget.x - this.position.x,
+        this.combatFacingTarget.z - this.position.z,
+      );
+      return;
+    }
     if (this.state === 'climb') return;
     const speed = Math.hypot(this.horizontal.x, this.horizontal.y);
     if (speed < TURN_MIN_SPEED) return;

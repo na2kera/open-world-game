@@ -203,6 +203,7 @@ export class DayNightCycle implements System {
   /** Direction towards the active light (sun by day, moon by night). */
   readonly lightDirection = new Vector3();
   private time = START_TIME_OF_DAY;
+  private elapsedDaysValue = 0;
   private readonly palette = toPalette(NIGHT);
   private readonly fog: Fog;
 
@@ -234,6 +235,11 @@ export class DayNightCycle implements System {
     return this.time;
   }
 
+  /** Whole in-game days elapsed since the current run/save baseline. */
+  get elapsedDays(): number {
+    return this.elapsedDaysValue;
+  }
+
   /** Current time as `HH:MM`. */
   get clockText(): string {
     return formatClock(this.time);
@@ -244,13 +250,16 @@ export class DayNightCycle implements System {
     return this.sunDirection.y < 0;
   }
 
-  setTimeOfDay(timeOfDay: number): void {
+  setTimeOfDay(timeOfDay: number, elapsedDays = this.elapsedDaysValue): void {
     this.time = ((timeOfDay % 1) + 1) % 1;
+    this.elapsedDaysValue = Math.max(0, elapsedDays);
     this.apply();
   }
 
   update(dt: number): void {
-    this.time = (this.time + dt / DAY_LENGTH_SEC) % 1;
+    const next = this.time + dt / DAY_LENGTH_SEC;
+    if (next >= 1) this.elapsedDaysValue += Math.floor(next);
+    this.time = next % 1;
   }
 
   frameUpdate(): void {

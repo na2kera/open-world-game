@@ -31,6 +31,8 @@ export class ThirdPersonCamera implements System {
   private readonly focus = new Vector3();
   private resetting = false;
   private lookTarget: Vector3 | null = null;
+  private shakeTime = 0;
+  private shakeStrength = 0;
 
   constructor(
     private readonly camera: PerspectiveCamera,
@@ -51,6 +53,11 @@ export class ThirdPersonCamera implements System {
   /** Starts swinging the camera behind the player. */
   resetBehindPlayer(): void {
     this.resetting = true;
+  }
+
+  shake(duration: number, strength: number): void {
+    this.shakeTime = Math.max(this.shakeTime, duration);
+    this.shakeStrength = Math.max(this.shakeStrength, strength);
   }
 
   update(): void {
@@ -101,6 +108,13 @@ export class ThirdPersonCamera implements System {
 
     const pos = this.camera.position;
     pos.copy(this.focus).addScaledVector(tmpOffset, this.distance);
+    if (this.shakeTime > 0) {
+      this.shakeTime = Math.max(0, this.shakeTime - frameDt);
+      const fade = Math.min(1, this.shakeTime * 12);
+      pos.x += Math.sin(this.shakeTime * 173) * this.shakeStrength * fade;
+      pos.y += Math.cos(this.shakeTime * 211) * this.shakeStrength * fade;
+      if (this.shakeTime === 0) this.shakeStrength = 0;
+    }
     const minY = this.terrain.heightAt(pos.x, pos.z) + c.terrainClearance;
     if (pos.y < minY) pos.y = minY;
     if (this.focus.y > WATER_LEVEL && pos.y < WATER_LEVEL + c.waterClearance) {
