@@ -12,6 +12,7 @@ import {
 import { GamepadSource } from '../input/GamepadSource';
 import { InputManager } from '../input/InputManager';
 import { KeyboardMouseSource } from '../input/KeyboardMouseSource';
+import { World } from '../world/World';
 import { EventBus } from './EventBus';
 import type { GameEvents } from './events';
 import { GameState } from './GameState';
@@ -42,6 +43,9 @@ export class Game {
   readonly input: InputManager;
   readonly gamepad: GamepadSource;
   readonly keyboardMouse: KeyboardMouseSource;
+  readonly world: World;
+  /** Live position that world streaming and shadows follow. */
+  readonly focus = new THREE.Vector3();
 
   private readonly systems: System[] = [];
   private rafId: number | null = null;
@@ -64,7 +68,8 @@ export class Game {
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // three r186 removed PCFSoftShadowMap; PCFShadowMap is its (soft-filtered) replacement.
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     container.appendChild(this.renderer.domElement);
 
@@ -79,6 +84,13 @@ export class Game {
     this.input = new InputManager([this.keyboardMouse, this.gamepad], (kind) =>
       this.bus.emit('input:activeKindChanged', { kind }),
     );
+
+    this.world = new World(this.scene, this.seed, this.focus, this.camera);
+    this.focus.copy(this.world.spawnPoint);
+    this.camera.position.copy(this.focus).add(new THREE.Vector3(0, 8, 14));
+    this.camera.lookAt(this.focus);
+    this.world.preload();
+    this.addSystem(this.world);
 
     this.handleResize();
     window.addEventListener('resize', this.handleResize);

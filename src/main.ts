@@ -16,5 +16,14 @@ if (!app) {
   throw new Error('#app not found');
 }
 
+declare global {
+  interface Window {
+    /** Game instance, exposed only with `?debug` for console inspection. */
+    __game?: Game;
+  }
+}
+
 const params = new URLSearchParams(window.location.search);
-new Game(app, { seed: readSeed(params), debug: params.has('debug') }).start();
+const debug = params.has('debug');
+const game = new Game(app, { seed: readSeed(params), debug }).start();
+if (debug) window.__game = game;

@@ -39,6 +39,10 @@ export const LOD_DISTANCES: readonly [number, number] = [160, 352];
 export const LOD_SEGMENTS: readonly [number, number, number] = [64, 32, 16];
 /** Maximum terrain chunk (re)builds per rendered frame. */
 export const CHUNK_BUILDS_PER_FRAME = 2;
+/** A second chunk is only built in the same frame if the first took less than this (ms). */
+export const CHUNK_BUILD_BUDGET_MS = 4;
+/** Focus movement (units) that triggers recomputing which chunks / cells should be loaded. */
+export const STREAMING_REFRESH_DISTANCE = 8;
 /** Chunks within this many chunk rings around the spawn are built synchronously at startup. */
 export const CHUNK_PRELOAD_RINGS = 2;
 /** Depth of the vertical skirt hiding cracks between chunks of different LOD. */
