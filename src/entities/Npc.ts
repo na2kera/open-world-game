@@ -2,7 +2,7 @@ import { Group, Vector3 } from 'three';
 
 import type { Interactable } from '../items/Interactable';
 import type { WorldLabelLayer } from '../ui/WorldLabelLayer';
-import { createStandingPerson } from './figure';
+import { createStandingPerson, type HairStyle, type PersonBuild } from './figure';
 
 export interface NpcOptions {
   readonly id: string;
@@ -12,7 +12,13 @@ export interface NpcOptions {
   readonly z: number;
   readonly color: number;
   readonly scale: number;
-  readonly hat: number;
+  readonly hat?: number | undefined;
+  readonly hairStyle?: HairStyle | undefined;
+  /** Hair colour. */
+  readonly hair?: number | undefined;
+  readonly build?: PersonBuild | undefined;
+  readonly trim?: number | undefined;
+  readonly sleeves?: number | undefined;
   readonly parent: Group;
   readonly labels: WorldLabelLayer;
   readonly onTalk: (npc: Npc) => void;
@@ -37,11 +43,15 @@ export class Npc implements Interactable {
       createStandingPerson({
         tunic: options.color,
         skin: 0xf1c9a5,
-        hair: 0x4a3428,
+        hair: options.hair ?? 0x4a3428,
         pants: 0x4e4034,
         boots: 0x3a2a1c,
         belt: 0x2c2118,
         hat: options.hat,
+        hairStyle: options.hairStyle,
+        build: options.build,
+        trim: options.trim,
+        sleeves: options.sleeves,
       }),
     );
     options.parent.add(this.root);

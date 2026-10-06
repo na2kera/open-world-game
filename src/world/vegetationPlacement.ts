@@ -46,8 +46,8 @@ export interface Collider {
   topY: number;
 }
 
-/** Packed grass instances: x, y, z, scale, rotation, tint per tuft. */
-export const GRASS_STRIDE = 6;
+/** Packed grass instances: x, y, z, scale, rotation, r, g, b per tuft. */
+export const GRASS_STRIDE = 8;
 
 /** Coarse height / moisture grid of one cell, used to place objects cheaply. */
 export interface CellGrid {
@@ -75,7 +75,7 @@ const MOISTURE_SIDE = VEGETATION_CELL_SIZE / MOISTURE_SPACING + 1;
 /** Placement attempts per cell; acceptance probability depends on the biome. */
 const TREE_ATTEMPTS = 260;
 const ROCK_ATTEMPTS = 80;
-const GRASS_ATTEMPTS = 3200;
+const GRASS_ATTEMPTS = 5200;
 
 const TREE_CHANCE: Readonly<Record<Biome, number>> = {
   ocean: 0,
@@ -118,9 +118,18 @@ const GRASS_CHANCE: Readonly<Record<Biome, number>> = {
   highland: 0.25,
   mountain: 0,
   snow: 0,
-  desert: 0.18,
+  desert: 0.05,
   wetland: 0.72,
 };
+
+/** Per-biome RGB multiplier for grass tufts (biomes not listed use white). */
+const GRASS_TINT: Readonly<Partial<Record<Biome, readonly [number, number, number]>>> = {
+  forest: [0.75, 0.85, 0.75],
+  desert: [1.3, 1.05, 0.4],
+  wetland: [0.8, 0.95, 0.85],
+  highland: [1.05, 1.0, 0.8],
+};
+const NEUTRAL_TINT = [1, 1, 1] as const;
 
 /** Placement limits. */
 const LIMITS = {
@@ -130,15 +139,13 @@ const LIMITS = {
   grassMinNormalY: 0.8,
   treeScale: [0.8, 1.45],
   rockScale: [0.5, 2.2],
-  grassScale: [0.7, 1.3],
+  grassScale: [0.6, 1.1],
   tint: [0.8, 1.15],
   rockMaxTilt: 0.4,
   /** Trees / rocks are sunk slightly to hide interpolation error on slopes. */
   treeSink: 0.3,
   rockSink: 0.35,
   grassSink: 0.05,
-  /** Grass under the forest canopy is darker. */
-  forestGrassTint: 0.75,
 } as const;
 
 /** Collision shape relative to the instance scale. */
@@ -335,15 +342,11 @@ export function generateGrass(placement: CellPlacement, seed: number): Float32Ar
     out[o + 2] = c.z;
     out[o + 3] = randRange(rng, LIMITS.grassScale[0], LIMITS.grassScale[1]);
     out[o + 4] = rng() * Math.PI * 2;
-    const climateTint =
-      c.biome === 'forest'
-        ? LIMITS.forestGrassTint
-        : c.biome === 'desert'
-          ? 0.82
-          : c.biome === 'wetland'
-            ? 0.68
-            : 1;
-    out[o + 5] = randRange(rng, LIMITS.tint[0], LIMITS.tint[1]) * climateTint;
+    const brightness = randRange(rng, LIMITS.tint[0], LIMITS.tint[1]);
+    const tint = GRASS_TINT[c.biome] ?? NEUTRAL_TINT;
+    out[o + 5] = brightness * tint[0];
+    out[o + 6] = brightness * tint[1];
+    out[o + 7] = brightness * tint[2];
     count++;
   }
   return out.slice(0, count * GRASS_STRIDE);

@@ -11,6 +11,7 @@ import {
 } from 'three';
 
 import { NPC_DEFS } from '../data/npcs';
+import type { HairStyle, PersonBuild } from '../entities/figure';
 import type { WorldCollision } from './WorldCollision';
 import { placeLandmarks, type PlacedPoint } from './landmarkPlacement';
 import type { Platforms } from './Platforms';
@@ -34,7 +35,12 @@ export interface BuiltLandmarks {
     z: number;
     color: number;
     scale: number;
-    hat: number;
+    hat: number | undefined;
+    hairStyle: HairStyle | undefined;
+    hair: number | undefined;
+    build: PersonBuild | undefined;
+    trim: number | undefined;
+    sleeves: number | undefined;
   }[];
 }
 
@@ -90,6 +96,11 @@ export class Landmarks {
         color: def.color,
         scale: def.scale,
         hat: def.hat,
+        hairStyle: def.hairStyle,
+        hair: def.hair,
+        build: def.build,
+        trim: def.trim,
+        sleeves: def.sleeves,
       };
     });
     return { towers, shrine: placed.shrine, arena: placed.arena, npcs };

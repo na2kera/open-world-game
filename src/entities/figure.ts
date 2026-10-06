@@ -1,13 +1,21 @@
 import {
+  BoxGeometry,
+  BufferAttribute,
   CapsuleGeometry,
+  Color,
   ConeGeometry,
+  CylinderGeometry,
   Group,
+  Matrix4,
   Mesh,
   MeshStandardMaterial,
+  Object3D,
   SphereGeometry,
+  TorusGeometry,
   type BufferGeometry,
   type Material,
 } from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /** Shared proportions. Feet are y = 0 when the hips sit at {@link PERSON.hipHeight}. */
 export const PERSON = {
@@ -15,11 +23,23 @@ export const PERSON = {
   shoulderX: 0.3,
   shoulderY: 0.52,
   hipX: 0.11,
+  /** Grip centre of the hand on the arm group (weapon attach point). */
   handY: -0.46,
-  bootY: -0.78,
-  headRadius: 0.155,
-  torsoLift: 0.34,
+  /** Centre of the boot foot on the leg group. */
+  bootY: -0.855,
+  headRadius: 0.16,
+  /** Centre of the chest on the hips group. */
+  torsoLift: 0.43,
+  /** Centre of the head on the hips group. */
+  headY: 0.835,
+  /** Elbow on the arm group. */
+  elbowY: -0.26,
+  /** Knee on the leg group. */
+  kneeY: -0.43,
 } as const;
+
+export type HairStyle = 'short' | 'bob' | 'ponytail' | 'bun' | 'long';
+export type PersonBuild = 'slim' | 'average' | 'stout';
 
 export interface PersonPalette {
   readonly tunic: number;
@@ -28,7 +48,15 @@ export interface PersonPalette {
   readonly pants: number;
   readonly boots: number;
   readonly belt: number;
-  readonly hat?: number;
+  readonly hat?: number | undefined;
+  readonly hairStyle?: HairStyle | undefined;
+  readonly build?: PersonBuild | undefined;
+  /** Collar, hem and hat band colour. Defaults to a darker tunic. */
+  readonly trim?: number | undefined;
+  /** Upper-arm colour. Defaults to the tunic. */
+  readonly sleeves?: number | undefined;
+  /** Pupil colour. */
+  readonly eye?: number | undefined;
 }
 
 export interface PersonBuckets {
@@ -44,7 +72,59 @@ export interface PersonLimbs {
   readonly rightLeg: Group;
 }
 
-const EYE = 0x2a2118;
+const DEFAULT_EYE = 0x2a2118;
+const SCLERA = 0xf6f1ea;
+const MOUTH = 0x6e3428;
+const BUCKLE = 0xc9a94e;
+const TRIM_SHADE = 0.68;
+const BROW_SHADE = 0.75;
+
+const BUILD_WIDTH: Readonly<Record<PersonBuild, number>> = {
+  slim: 0.9,
+  average: 1,
+  stout: 1.15,
+};
+
+/** Arm bend: the upper arm leans back and the forearm forward so the hand stays under the shoulder. */
+const ARM = {
+  upperTilt: 0.13,
+  forearmBend: -0.3,
+  /** Elbow → hand distance chosen so the hand lands on (0, handY, 0). */
+  forearmLength: 0.2052,
+} as const;
+
+/** Low segment counts keep a person around 3.5k triangles. */
+const CAP_SEGMENTS = 3;
+const RADIAL_SEGMENTS = 8;
+/** Width / height segments of small spheres (joints, pupils, ears, nose). */
+const SMALL_SPHERE = [6, 5] as const;
+
+/**
+ * Surface finishes. Parts sharing a finish and a rigid parent are merged into one
+ * vertex-coloured mesh, so a person costs about 14 draw calls.
+ */
+type Finish = 'cloth' | 'skin' | 'hair' | 'leather' | 'eye' | 'metal';
+const FINISHES: Readonly<Record<Finish, { roughness: number; metalness: number }>> = {
+  cloth: { roughness: 0.85, metalness: 0 },
+  skin: { roughness: 0.6, metalness: 0 },
+  hair: { roughness: 0.7, metalness: 0 },
+  leather: { roughness: 0.75, metalness: 0 },
+  eye: { roughness: 0.35, metalness: 0 },
+  metal: { roughness: 0.4, metalness: 0.6 },
+};
+
+interface Paint {
+  readonly color: Color;
+  readonly finish: Finish;
+}
+
+interface Part {
+  readonly node: Object3D;
+  readonly geometry: BufferGeometry;
+  readonly paint: Paint;
+}
+
+const tmpMatrix = new Matrix4();
 
 /** A person standing on y = 0, facing +Z. Each mesh owns its geometry. */
 export function createStandingPerson(palette: PersonPalette): Group {
@@ -70,103 +150,427 @@ export function createStandingPerson(palette: PersonPalette): Group {
   return root;
 }
 
+interface Kit {
+  readonly w: number;
+  readonly parts: Part[];
+  /** Helper groups (elbow chain) removed once their parts are baked. */
+  readonly scaffolds: Object3D[];
+  readonly tunic: Paint;
+  readonly trim: Paint;
+  readonly sleeves: Paint;
+  readonly skin: Paint;
+  readonly hair: Paint;
+  readonly pants: Paint;
+  readonly boots: Paint;
+  readonly belt: Paint;
+  readonly buckle: Paint;
+  readonly sclera: Paint;
+  readonly pupil: Paint;
+  readonly brow: Paint;
+  readonly mouth: Paint;
+}
+
 /** Adds the body meshes under joints that the caller animates. */
 export function dressPerson(
   limbs: PersonLimbs,
   palette: PersonPalette,
   bucket: PersonBuckets,
 ): void {
-  const tunic = cloth(palette.tunic, 0.72, bucket);
-  const skin = cloth(palette.skin, 0.58, bucket);
-  const hair = cloth(palette.hair, 0.64, bucket);
-  const pants = cloth(palette.pants, 0.78, bucket);
-  const boots = cloth(palette.boots, 0.7, bucket);
-  const belt = cloth(palette.belt, 0.55, bucket);
-  const eye = cloth(EYE, 0.35, bucket);
-  const hatMaterial = palette.hat === undefined ? null : cloth(palette.hat, 0.6, bucket);
+  const kit: Kit = {
+    w: BUILD_WIDTH[palette.build ?? 'average'],
+    parts: [],
+    scaffolds: [],
+    tunic: paint(palette.tunic, 'cloth'),
+    trim:
+      palette.trim === undefined
+        ? { color: new Color(palette.tunic).multiplyScalar(TRIM_SHADE), finish: 'cloth' }
+        : paint(palette.trim, 'cloth'),
+    sleeves: paint(palette.sleeves ?? palette.tunic, 'cloth'),
+    skin: paint(palette.skin, 'skin'),
+    hair: paint(palette.hair, 'hair'),
+    pants: paint(palette.pants, 'cloth'),
+    boots: paint(palette.boots, 'leather'),
+    belt: paint(palette.belt, 'leather'),
+    buckle: paint(BUCKLE, 'metal'),
+    sclera: paint(SCLERA, 'eye'),
+    pupil: paint(palette.eye ?? DEFAULT_EYE, 'eye'),
+    brow: { color: new Color(palette.hair).multiplyScalar(BROW_SHADE), finish: 'hair' },
+    mouth: paint(MOUTH, 'skin'),
+  };
+  dressTorso(limbs.hips, kit);
+  dressHead(limbs.hips, kit);
+  dressHair(limbs.hips, palette, kit);
+  dressArm(limbs.leftArm, 1, kit);
+  dressArm(limbs.rightArm, -1, kit);
+  dressLeg(limbs.leftLeg, kit);
+  dressLeg(limbs.rightLeg, kit);
+  bake(limbs, kit, bucket);
+}
 
-  const torso = place(
-    new CapsuleGeometry(0.15, 0.32, 4, 10),
-    tunic,
+/**
+ * Merges the placed parts into one mesh per (animated joint, finish). Each part's transform
+ * relative to its joint is baked into its geometry together with its colour.
+ */
+function bake(limbs: PersonLimbs, k: Kit, bucket: PersonBuckets): void {
+  const joints: readonly Group[] = [
     limbs.hips,
+    limbs.leftArm,
+    limbs.rightArm,
+    limbs.leftLeg,
+    limbs.rightLeg,
+  ];
+  const batches = new Map<Group, Map<Finish, BufferGeometry[]>>();
+  for (const part of k.parts) {
+    part.node.updateMatrix();
+    tmpMatrix.copy(part.node.matrix);
+    let joint = part.node.parent;
+    while (joint && !joints.includes(joint as Group)) {
+      joint.updateMatrix();
+      tmpMatrix.premultiply(joint.matrix);
+      joint = joint.parent;
+    }
+    if (!joint) throw new Error('figure part is not under a person joint');
+    part.geometry.applyMatrix4(tmpMatrix);
+    paintVertices(part.geometry, part.paint.color);
+    part.node.removeFromParent();
+
+    let byFinish = batches.get(joint as Group);
+    if (!byFinish) batches.set(joint as Group, (byFinish = new Map()));
+    const list = byFinish.get(part.paint.finish);
+    if (list) list.push(part.geometry);
+    else byFinish.set(part.paint.finish, [part.geometry]);
+  }
+  for (const scaffold of k.scaffolds) scaffold.removeFromParent();
+
+  const materials = new Map<Finish, MeshStandardMaterial>();
+  for (const [joint, byFinish] of batches) {
+    for (const [finish, geometries] of byFinish) {
+      const merged = mergeGeometries(geometries);
+      if (!merged) throw new Error(`figure: could not merge ${finish} parts`);
+      for (const geometry of geometries) geometry.dispose();
+      bucket.geometries.push(merged);
+      let material = materials.get(finish);
+      if (!material) {
+        material = new MeshStandardMaterial({ vertexColors: true, ...FINISHES[finish] });
+        materials.set(finish, material);
+        bucket.materials.push(material);
+      }
+      const mesh = new Mesh(merged, material);
+      mesh.castShadow = true;
+      joint.add(mesh);
+    }
+  }
+}
+
+function paintVertices(geometry: BufferGeometry, color: Color): void {
+  const count = geometry.getAttribute('position').count;
+  const colors = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    colors[i * 3] = color.r;
+    colors[i * 3 + 1] = color.g;
+    colors[i * 3 + 2] = color.b;
+  }
+  geometry.setAttribute('color', new BufferAttribute(colors, 3));
+}
+
+function dressTorso(hips: Group, k: Kit): void {
+  const w = k.w;
+  // Chest: widest at the shoulders.
+  place(
+    new CapsuleGeometry(0.145, 0.16, 4, RADIAL_SEGMENTS),
+    k.tunic,
+    hips,
     0,
     PERSON.torsoLift,
     0,
-    bucket,
-  );
-  torso.scale.set(1.45, 1, 0.82);
-  place(new CapsuleGeometry(0.155, 0.05, 3, 10), belt, limbs.hips, 0, 0.08, 0, bucket).scale.set(
-    1.35,
-    1,
-    0.9,
-  );
-
-  const headY = 0.72;
-  place(new SphereGeometry(PERSON.headRadius, 16, 12), skin, limbs.hips, 0, headY, 0, bucket);
-  const hairCap = place(
-    new SphereGeometry(PERSON.headRadius + 0.02, 14, 10),
-    hair,
-    limbs.hips,
+    k,
+  ).scale.set(1.5 * w, 1, 0.85 * w);
+  // Shoulder yoke so the arms always meet the torso, whatever the build.
+  const yoke = place(
+    new CapsuleGeometry(0.07, 0.36, CAP_SEGMENTS, RADIAL_SEGMENTS),
+    k.tunic,
+    hips,
     0,
-    headY + 0.04,
-    -0.02,
-    bucket,
+    PERSON.shoulderY - 0.02,
+    -0.005,
+    k,
   );
-  hairCap.scale.set(1.05, 0.62, 1.05);
-  place(new SphereGeometry(0.028, 8, 6), eye, limbs.hips, 0.055, headY - 0.01, 0.13, bucket);
-  place(new SphereGeometry(0.028, 8, 6), eye, limbs.hips, -0.055, headY - 0.01, 0.13, bucket);
-
-  if (hatMaterial) {
-    place(
-      new CapsuleGeometry(0.2, 0.02, 2, 10),
-      hatMaterial,
-      limbs.hips,
-      0,
-      headY + 0.12,
-      0,
-      bucket,
-    ).scale.set(1, 0.28, 1);
-    place(new ConeGeometry(0.13, 0.22, 10), hatMaterial, limbs.hips, 0, headY + 0.28, 0, bucket);
-  }
-
-  place(new CapsuleGeometry(0.055, 0.34, 3, 8), tunic, limbs.leftArm, 0, -0.24, 0, bucket);
-  place(new CapsuleGeometry(0.055, 0.34, 3, 8), tunic, limbs.rightArm, 0, -0.24, 0, bucket);
-  place(new SphereGeometry(0.055, 8, 6), skin, limbs.leftArm, 0, PERSON.handY, 0, bucket);
-  place(new SphereGeometry(0.055, 8, 6), skin, limbs.rightArm, 0, PERSON.handY, 0, bucket);
-
-  place(new CapsuleGeometry(0.075, 0.46, 3, 8), pants, limbs.leftLeg, 0, -0.32, 0, bucket);
-  place(new CapsuleGeometry(0.075, 0.46, 3, 8), pants, limbs.rightLeg, 0, -0.32, 0, bucket);
-  place(new CapsuleGeometry(0.07, 0.12, 2, 8), boots, limbs.leftLeg, 0, PERSON.bootY, 0.02, bucket);
+  yoke.rotation.z = Math.PI / 2;
+  yoke.scale.set(1, 1, 0.85 * w);
+  // Waist / pelvis: narrower, so the silhouette tapers.
   place(
-    new CapsuleGeometry(0.07, 0.12, 2, 8),
-    boots,
-    limbs.rightLeg,
+    new CapsuleGeometry(0.125, 0.1, CAP_SEGMENTS, RADIAL_SEGMENTS),
+    k.tunic,
+    hips,
     0,
-    PERSON.bootY,
-    0.02,
-    bucket,
-  );
+    0.1,
+    0,
+    k,
+  ).scale.set(1.3 * w, 1, 0.82 * w);
+  // Hem band at the bottom of the tunic.
+  const hem = place(new TorusGeometry(0.1, 0.026, 5, 12), k.trim, hips, 0, -0.035, 0, k);
+  hem.rotation.x = Math.PI / 2;
+  hem.scale.set(1.3 * w, 0.82 * w, 1);
+  // Collar.
+  const collar = place(new TorusGeometry(0.06, 0.022, 5, 12), k.trim, hips, 0, 0.655, 0.005, k);
+  collar.rotation.x = Math.PI / 2;
+  collar.scale.set(1.2 * w, 0.95 * w, 1);
+  // Belt and buckle.
+  place(
+    new CapsuleGeometry(0.13, 0.03, CAP_SEGMENTS, RADIAL_SEGMENTS),
+    k.belt,
+    hips,
+    0,
+    0.19,
+    0,
+    k,
+  ).scale.set(1.32 * w, 0.32, 0.86 * w);
+  place(new BoxGeometry(0.065, 0.05, 0.02), k.buckle, hips, 0, 0.19, 0.115 * w, k);
+  // Neck.
+  place(new CylinderGeometry(0.05, 0.056, 0.13, 8, 1, true), k.skin, hips, 0, 0.665, 0, k);
 }
 
+function dressHead(hips: Group, k: Kit): void {
+  const y = PERSON.headY;
+  place(new SphereGeometry(PERSON.headRadius, 12, 8), k.skin, hips, 0, y, 0, k).scale.set(
+    0.95,
+    1.06,
+    0.98,
+  );
+  for (const side of [1, -1]) {
+    const x = 0.058 * side;
+    place(new SphereGeometry(0.034, 8, 6), k.sclera, hips, x, y, 0.135, k).scale.set(1, 1.05, 0.6);
+    place(
+      new SphereGeometry(0.018, ...SMALL_SPHERE),
+      k.pupil,
+      hips,
+      x,
+      y - 0.002,
+      0.153,
+      k,
+    ).scale.set(1, 1.15, 0.6);
+    const brow = place(new BoxGeometry(0.056, 0.013, 0.016), k.brow, hips, x, y + 0.045, 0.14, k);
+    brow.rotation.z = -0.12 * side;
+    place(
+      new SphereGeometry(0.034, ...SMALL_SPHERE),
+      k.skin,
+      hips,
+      0.152 * side,
+      y - 0.01,
+      -0.005,
+      k,
+    ).scale.set(0.65, 1, 0.8);
+  }
+  place(new SphereGeometry(0.022, ...SMALL_SPHERE), k.skin, hips, 0, y - 0.035, 0.155, k);
+  place(new BoxGeometry(0.048, 0.011, 0.012), k.mouth, hips, 0, y - 0.08, 0.142, k);
+}
+
+function dressHair(hips: Group, palette: PersonPalette, k: Kit): void {
+  const y = PERSON.headY;
+  const style = palette.hairStyle ?? 'short';
+  const hatted = palette.hat !== undefined;
+  // Shell over the top and back of the skull, tilted back so the hairline clears the brows.
+  const cap = place(
+    new SphereGeometry(0.172, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.58),
+    k.hair,
+    hips,
+    0,
+    y,
+    -0.01,
+    k,
+  );
+  cap.rotation.x = -0.6;
+  cap.scale.set(0.98, 1.04, 1.02);
+
+  if (style === 'short' && !hatted) {
+    const fringe = place(
+      new SphereGeometry(0.06, ...SMALL_SPHERE),
+      k.hair,
+      hips,
+      0.025,
+      y + 0.068,
+      0.138,
+      k,
+    );
+    fringe.scale.set(1.9, 0.6, 0.55);
+    fringe.rotation.z = 0.3;
+  } else if (style === 'bob') {
+    for (const side of [1, -1]) {
+      place(
+        new CapsuleGeometry(0.05, 0.14, CAP_SEGMENTS, RADIAL_SEGMENTS),
+        k.hair,
+        hips,
+        0.152 * side,
+        y - 0.05,
+        -0.015,
+        k,
+      ).scale.set(0.7, 1, 1.6);
+    }
+    place(
+      new CapsuleGeometry(0.07, 0.1, CAP_SEGMENTS, RADIAL_SEGMENTS),
+      k.hair,
+      hips,
+      0,
+      y - 0.06,
+      -0.12,
+      k,
+    ).scale.set(1.8, 1, 0.6);
+  } else if (style === 'ponytail') {
+    place(new SphereGeometry(0.032, ...SMALL_SPHERE), k.trim, hips, 0, y + 0.03, -0.172, k);
+    const tail = place(
+      new CapsuleGeometry(0.045, 0.2, CAP_SEGMENTS, RADIAL_SEGMENTS),
+      k.hair,
+      hips,
+      0,
+      y - 0.07,
+      -0.205,
+      k,
+    );
+    tail.rotation.x = 0.34;
+    tail.scale.set(1, 1, 0.85);
+  } else if (style === 'bun' && !hatted) {
+    place(new SphereGeometry(0.075, 12, 8), k.hair, hips, 0, y + 0.13, -0.1, k);
+  } else if (style === 'long') {
+    place(
+      new CapsuleGeometry(0.07, 0.2, CAP_SEGMENTS, RADIAL_SEGMENTS),
+      k.hair,
+      hips,
+      0,
+      y - 0.13,
+      -0.13,
+      k,
+    ).scale.set(1.9, 1, 0.55);
+  }
+
+  if (palette.hat === undefined) return;
+  const hat = paint(palette.hat, 'cloth');
+  place(new CylinderGeometry(0.24, 0.24, 0.025, 16), hat, hips, 0, y + 0.125, 0, k);
+  place(new ConeGeometry(0.14, 0.26, 12), hat, hips, 0, y + 0.255, 0, k);
+  place(new CylinderGeometry(0.133, 0.137, 0.04, 12, 1, true), k.trim, hips, 0, y + 0.15, 0, k);
+}
+
+/** `side` is +1 for the left arm (+X) and -1 for the right arm. */
+function dressArm(arm: Group, side: 1 | -1, k: Kit): void {
+  const w = k.w;
+  place(new SphereGeometry(0.085, 10, 7), k.sleeves, arm, -0.012 * side, 0, 0, k);
+
+  const upper = new Group();
+  upper.rotation.x = ARM.upperTilt;
+  arm.add(upper);
+  k.scaffolds.push(upper);
+  place(
+    new CapsuleGeometry(0.058, 0.17, CAP_SEGMENTS, RADIAL_SEGMENTS),
+    k.sleeves,
+    upper,
+    0,
+    -0.13,
+    0,
+    k,
+  ).scale.set(w, 1, w);
+  place(
+    new SphereGeometry(0.056, ...SMALL_SPHERE),
+    k.sleeves,
+    upper,
+    0,
+    PERSON.elbowY,
+    0,
+    k,
+  ).scale.set(w, 1, w);
+
+  const forearm = new Group();
+  forearm.position.y = PERSON.elbowY;
+  forearm.rotation.x = ARM.forearmBend;
+  upper.add(forearm);
+  place(
+    new CapsuleGeometry(0.046, 0.1, CAP_SEGMENTS, RADIAL_SEGMENTS),
+    k.skin,
+    forearm,
+    0,
+    -0.085,
+    0,
+    k,
+  ).scale.set(w, 1, w);
+  // Mitt: flattened side to side, palm facing the body.
+  place(
+    new CapsuleGeometry(0.045, 0.05, CAP_SEGMENTS, RADIAL_SEGMENTS),
+    k.skin,
+    forearm,
+    0,
+    -ARM.forearmLength,
+    0,
+    k,
+  ).scale.set(0.72 * w, 1, 1.12 * w);
+}
+
+function dressLeg(leg: Group, k: Kit): void {
+  const w = k.w;
+  place(
+    new CapsuleGeometry(0.078, 0.26, CAP_SEGMENTS, RADIAL_SEGMENTS),
+    k.pants,
+    leg,
+    0,
+    -0.2,
+    0,
+    k,
+  ).scale.set(w, 1, w);
+  place(
+    new SphereGeometry(0.066, ...SMALL_SPHERE),
+    k.pants,
+    leg,
+    0,
+    PERSON.kneeY,
+    0.005,
+    k,
+  ).scale.set(w, 1, w);
+  place(
+    new CapsuleGeometry(0.062, 0.26, CAP_SEGMENTS, RADIAL_SEGMENTS),
+    k.pants,
+    leg,
+    0,
+    -0.62,
+    0,
+    k,
+  ).scale.set(w, 1, w);
+  // Boot cuff overlapping the shin bottom and the foot top.
+  place(new CylinderGeometry(0.074, 0.07, 0.12, 8), k.boots, leg, 0, -0.77, 0, k).scale.set(
+    w,
+    1,
+    w,
+  );
+  // Foot: a capsule lying along +Z, sole on the ground, toes ahead of the shin.
+  const foot = place(
+    new CapsuleGeometry(0.06, 0.12, CAP_SEGMENTS, RADIAL_SEGMENTS),
+    k.boots,
+    leg,
+    0,
+    PERSON.bootY,
+    0.06,
+    k,
+  );
+  foot.rotation.x = Math.PI / 2;
+  foot.scale.set(1.15 * w, 1, 0.75);
+}
+
+/**
+ * Registers a part at (x, y, z) under `parent`. Returns a transform node for further
+ * rotation / scale; the geometry is baked into a merged mesh by {@link bake}.
+ */
 function place(
   geometry: BufferGeometry,
-  material: Material,
+  surface: Paint,
   parent: Group,
   x: number,
   y: number,
   z: number,
-  bucket: PersonBuckets,
-): Mesh {
-  bucket.geometries.push(geometry);
-  const part = new Mesh(geometry, material);
-  part.position.set(x, y, z);
-  part.castShadow = true;
-  parent.add(part);
-  return part;
+  k: Kit,
+): Object3D {
+  const node = new Object3D();
+  node.position.set(x, y, z);
+  parent.add(node);
+  k.parts.push({ node, geometry, paint: surface });
+  return node;
 }
 
-function cloth(color: number, roughness: number, bucket: PersonBuckets): MeshStandardMaterial {
-  const material = new MeshStandardMaterial({ color, roughness, metalness: 0 });
-  bucket.materials.push(material);
-  return material;
+function paint(color: number, finish: Finish): Paint {
+  return { color: new Color(color), finish };
 }

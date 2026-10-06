@@ -163,10 +163,10 @@ function createRockGeometry(): BufferGeometry {
   return geometry;
 }
 
-const GRASS_BLADES = 5;
-const GRASS_BLADE_WIDTH = 0.11;
-const GRASS_BLADE_HEIGHT = 0.95;
-const GRASS_BLADE_LEAN = 0.16;
+const GRASS_BLADES = 7;
+const GRASS_BLADE_WIDTH = 0.07;
+const GRASS_BLADE_HEIGHT = 0.55;
+const GRASS_BLADE_LEAN = 0.07;
 
 /** A tuft of crossing triangular blades; normals point up so it shades like the ground. */
 function createGrassGeometry(): BufferGeometry {
@@ -406,7 +406,7 @@ export class Vegetation implements System {
         i,
         composeUpright(data[o]!, data[o + 1]!, data[o + 2]!, data[o + 4]!, data[o + 3]!),
       );
-      mesh.setColorAt(i, tmpColor.setScalar(data[o + 5]!));
+      mesh.setColorAt(i, tmpColor.setRGB(data[o + 5]!, data[o + 6]!, data[o + 7]!));
     }
     return finalize(mesh, false);
   }

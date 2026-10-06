@@ -1,11 +1,13 @@
 import { type BufferGeometry, type Material, type Object3D, Group, Mesh, Vector3 } from 'three';
 
-import { createStandingPerson } from '../entities/figure';
+import { createStandingPerson, type HairStyle, type PersonBuild } from '../entities/figure';
 import type { WorldLabelLayer } from '../ui/WorldLabelLayer';
 import { damp, dampAngle } from '../utils/math';
 import type { NetPlayer } from './room';
 
 const FOLLOW = 10;
+const HAIR_STYLES: readonly HairStyle[] = ['short', 'bob', 'ponytail', 'bun', 'long'];
+const BUILDS: readonly PersonBuild[] = ['slim', 'average', 'stout'];
 
 /** Another person in the room. The mesh eases toward the latest network snapshot. */
 export class RemoteAvatar {
@@ -19,7 +21,8 @@ export class RemoteAvatar {
   constructor(player: NetPlayer, parent: Object3D, labels: WorldLabelLayer) {
     this.id = player.id;
     this.labelText = player.name;
-    const hue = hashHue(player.id);
+    const hash = hashId(player.id);
+    const hue = hash % 360;
     this.root.add(
       createStandingPerson({
         tunic: hsl(hue, 0.5, 0.4),
@@ -28,6 +31,8 @@ export class RemoteAvatar {
         pants: 0x4a4036,
         boots: 0x32261c,
         belt: 0x2a2118,
+        hairStyle: HAIR_STYLES[(hash >>> 9) % HAIR_STYLES.length],
+        build: BUILDS[(hash >>> 13) % BUILDS.length],
       }),
     );
     this.root.name = `remote:${player.id}`;
@@ -77,10 +82,10 @@ export class RemoteAvatar {
   }
 }
 
-function hashHue(id: string): number {
+function hashId(id: string): number {
   let hash = 0;
   for (let index = 0; index < id.length; index++) hash = Math.imul(hash ^ id.charCodeAt(index), 33);
-  return (hash >>> 0) % 360;
+  return hash >>> 0;
 }
 
 function hsl(hue: number, saturation: number, lightness: number): number {
