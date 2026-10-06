@@ -1,3 +1,5 @@
+import './style.css';
+
 import { DEFAULT_SEED } from './config';
 import { Game } from './core/Game';
 import { joinMultiplayer } from './net/session';

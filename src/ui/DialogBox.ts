@@ -19,6 +19,9 @@ export class DialogBox implements System {
   private onDone: DialogListener | null = null;
   private revealed = 0;
   private choiceIndex = 0;
+  private confirmWasHeld = false;
+  private upWasHeld = false;
+  private downWasHeld = false;
   private readonly pendingEffects: DialogEffect[] = [];
 
   constructor(
@@ -47,6 +50,10 @@ export class DialogBox implements System {
     this.onDone = onDone;
     this.revealed = 0;
     this.choiceIndex = 0;
+    const buttons = this.input.state.buttons;
+    this.confirmWasHeld = buttons.menuConfirm.held || buttons.interact.held;
+    this.upWasHeld = buttons.menuUp.held;
+    this.downWasHeld = buttons.menuDown.held;
     this.pendingEffects.length = 0;
     this.pendingEffects.push(...this.cursor.effects);
     this.element.hidden = false;
@@ -61,8 +68,10 @@ export class DialogBox implements System {
     this.revealed += frameDt * CHARACTERS_PER_SECOND;
     const full = this.revealed >= text.length;
     if (full !== wasFull) this.render(full);
-    const confirm =
-      this.input.state.buttons.menuConfirm.pressed || this.input.state.buttons.interact.pressed;
+    const buttons = this.input.state.buttons;
+    const confirmHeld = buttons.menuConfirm.held || buttons.interact.held;
+    const confirm = confirmHeld && !this.confirmWasHeld;
+    this.confirmWasHeld = confirmHeld;
     const choices = cursor.node.choices ?? [];
     if (!full) {
       if (confirm) {
@@ -72,13 +81,15 @@ export class DialogBox implements System {
       return;
     }
     if (choices.length > 0) {
-      if (this.input.state.buttons.menuUp.pressed) {
+      if (buttons.menuUp.held && !this.upWasHeld) {
         this.choiceIndex = (this.choiceIndex - 1 + choices.length) % choices.length;
       }
-      if (this.input.state.buttons.menuDown.pressed) {
+      if (buttons.menuDown.held && !this.downWasHeld) {
         this.choiceIndex = (this.choiceIndex + 1) % choices.length;
       }
     }
+    this.upWasHeld = buttons.menuUp.held;
+    this.downWasHeld = buttons.menuDown.held;
     if (!confirm) return;
     const step = cursor.advance(this.choiceIndex);
     if (!step) {

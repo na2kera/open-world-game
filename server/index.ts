@@ -12,6 +12,7 @@ import {
 } from '../src/net/room';
 
 const DEFAULT_PORT = 8787;
+const STALE_MS = 4000;
 
 interface ClientState {
   roomId: string;
@@ -32,9 +33,20 @@ export function startMultiplayerServer(port = DEFAULT_PORT): Promise<RunningServ
   });
   const sockets = new WebSocketServer({ server: httpServer });
   const clients = new Map<WebSocket, ClientState>();
+  const lastSeen = new Map<WebSocket, number>();
+  const sweep = setInterval(() => {
+    const now = Date.now();
+    for (const socket of sockets.clients) {
+      const seen = lastSeen.get(socket) ?? 0;
+      if (now - seen > STALE_MS) socket.terminate();
+    }
+  }, 1000);
+  sweep.unref();
 
   sockets.on('connection', (socket) => {
+    lastSeen.set(socket, Date.now());
     socket.on('message', (data) => {
+      lastSeen.set(socket, Date.now());
       const message = parseClientMessage(data.toString());
       if (!message) return;
       if (message.type === 'join') {
@@ -72,6 +84,7 @@ export function startMultiplayerServer(port = DEFAULT_PORT): Promise<RunningServ
     });
 
     socket.on('close', () => {
+      lastSeen.delete(socket);
       const client = clients.get(socket);
       clients.delete(socket);
       if (!client) return;
@@ -87,7 +100,10 @@ export function startMultiplayerServer(port = DEFAULT_PORT): Promise<RunningServ
       const bound = typeof address === 'object' && address ? address.port : port;
       resolve({
         port: bound,
-        close: () => closeServer(httpServer, sockets),
+        close: () => {
+          clearInterval(sweep);
+          return closeServer(httpServer, sockets);
+        },
       });
     });
   });
