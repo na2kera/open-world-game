@@ -150,6 +150,7 @@ export class GameplayFlow implements System {
       if (this.story.hasTower(tower.id)) this.deps.landmarks.setTowerActive(tower.id);
     }
     this.publish(this.quests.syncOwned((itemId) => this.deps.inventory.count(itemId)));
+    this.creditLitTowers();
     this.refreshPresentation();
   }
 
@@ -251,6 +252,7 @@ export class GameplayFlow implements System {
           if (next === 'towers') {
             this.publish(this.quests.start('main-towers', true));
             this.publish(this.quests.start('side-shrine'));
+            this.creditLitTowers();
           } else if (next === 'boss') {
             this.publish(this.quests.start('main-boss', true));
           } else if (next === 'report') {
@@ -302,8 +304,18 @@ export class GameplayFlow implements System {
     this.story.setRespawn(point);
     this.deps.hud.showBanner('塔が目覚めた');
     this.deps.bus.emit('tower:activated', { towerId: tower.id });
-    this.deps.save();
     this.publish(this.quests.apply({ type: 'activateTower', towerId: tower.id }));
+    this.deps.save();
+  }
+
+  /**
+   * Credits towers lit before the tower quest was active or before a save caught up.
+   * Idempotent: the quest only ever sets each tower objective to 1.
+   */
+  private creditLitTowers(): void {
+    for (const towerId of this.story.towers) {
+      this.publish(this.quests.apply({ type: 'activateTower', towerId }));
+    }
   }
 
   private touchShrine(): void {

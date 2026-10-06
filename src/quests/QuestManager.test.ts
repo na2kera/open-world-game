@@ -31,6 +31,31 @@ describe('QuestManager', () => {
     expect(quests.turnIn('main-towers')[0]?.type).toBe('completed');
   });
 
+  it('ignores tower events before the tower quest starts and credits them once resent', () => {
+    const quests = new QuestManager(QUEST_DEFS);
+    quests.start('main-wake', true);
+    expect(quests.apply({ type: 'activateTower', towerId: 'tower-0' })).toEqual([]);
+    quests.complete('main-wake');
+    quests.start('main-towers', true);
+    expect(quests.journalLines()).toContain('  東の塔を起動する（0/1）');
+    expect(quests.apply({ type: 'activateTower', towerId: 'tower-0' })).toEqual([
+      { type: 'progress', questId: 'main-towers', remove: [] },
+    ]);
+    expect(quests.journalLines()).toContain('  東の塔を起動する（1/1）');
+  });
+
+  it('treats a repeated tower event as no change', () => {
+    const quests = new QuestManager(QUEST_DEFS);
+    quests.start('main-wake', true);
+    quests.complete('main-wake');
+    quests.start('main-towers', true);
+    quests.apply({ type: 'activateTower', towerId: 'tower-1' });
+    expect(quests.apply({ type: 'activateTower', towerId: 'tower-1' })).toEqual([]);
+    expect(quests.journalLines()).toContain('  北の塔を起動する（1/1）');
+    const saved = quests.toJSON().started?.find((entry) => entry.id === 'main-towers');
+    expect(saved?.counts).toEqual([0, 1, 0]);
+  });
+
   it('consumes collected items on turn-in and round-trips through save data', () => {
     const quests = new QuestManager(QUEST_DEFS);
     quests.start('main-wake', true);
