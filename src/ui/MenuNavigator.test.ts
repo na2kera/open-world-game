@@ -22,6 +22,19 @@ describe('MenuNavigator', () => {
     expect(menu.update(0, { ...idle, cancel: true }).cancelled).toBe(true);
   });
 
+  it('requires a release after resetEdges before confirm or cancel count again', () => {
+    const menu = new MenuNavigator(2);
+    expect(menu.update(0, { ...idle, confirm: true }).confirmed).toBe(true);
+    menu.resetEdges();
+    expect(menu.update(0, { ...idle, confirm: true }).confirmed).toBe(false);
+    menu.update(0, idle);
+    expect(menu.update(0, { ...idle, confirm: true }).confirmed).toBe(true);
+    menu.resetEdges();
+    expect(menu.update(0, { ...idle, cancel: true }).cancelled).toBe(false);
+    menu.update(0, idle);
+    expect(menu.update(0, { ...idle, cancel: true }).cancelled).toBe(true);
+  });
+
   it('moves through an incomplete grid without leaving its bounds', () => {
     const menu = new MenuNavigator(7, 3);
     menu.setIndex(2);
