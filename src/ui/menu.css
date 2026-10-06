@@ -1,0 +1,435 @@
+.game-menu,
+.title-screen,
+.game-over-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  color: #f6f1df;
+  font-family: inherit;
+}
+
+.game-menu[hidden],
+.title-screen[hidden],
+.game-over-screen[hidden],
+.game-menu [hidden],
+.title-screen [hidden] {
+  display: none !important;
+}
+
+.game-menu {
+  pointer-events: auto;
+  padding: clamp(32px, 7vh, 72px) clamp(40px, 9vw, 120px);
+  box-sizing: border-box;
+  background: linear-gradient(120deg, rgba(10, 18, 24, 0.96), rgba(20, 28, 34, 0.88));
+  backdrop-filter: blur(8px);
+}
+
+.game-menu h2 {
+  margin: 0 0 24px;
+  font-size: 38px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+}
+
+.title-screen {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  padding-left: clamp(48px, 12vw, 180px);
+  box-sizing: border-box;
+  background: linear-gradient(90deg, rgba(5, 12, 18, 0.7), transparent 68%);
+  animation: menu-fade-in 1.3s ease both;
+  pointer-events: auto;
+}
+
+.title-logo h1 {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(64px, 10vw, 124px);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-shadow: 0 4px 16px #000;
+}
+
+.title-logo p {
+  margin: 0 0 42px 8px;
+  font-size: 17px;
+  letter-spacing: 0.18em;
+}
+
+.title-menu,
+.pause-options {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: min(340px, 75vw);
+  gap: 7px;
+}
+
+.title-menu button,
+.pause-options button,
+.menu-tabs button {
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.title-menu button,
+.pause-options button {
+  position: relative;
+  padding: 11px 20px 11px 34px;
+  text-align: left;
+  font-size: 20px;
+  letter-spacing: 0.12em;
+  border-radius: 4px;
+}
+
+.title-menu button.is-selected,
+.pause-options button.is-selected {
+  background: linear-gradient(90deg, rgba(239, 220, 162, 0.25), transparent);
+}
+
+.title-menu button.is-selected::before,
+.pause-options button.is-selected::before {
+  position: absolute;
+  left: 9px;
+  content: '◆';
+  color: #f3d477;
+  font-size: 12px;
+  top: 16px;
+}
+
+.title-input-prompt {
+  position: absolute;
+  left: 50%;
+  bottom: 5vh;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 14px;
+  animation: menu-pulse 1.8s ease-in-out infinite;
+}
+
+.controls-help {
+  width: min(760px, 82vw);
+  padding: 24px 34px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(8, 14, 19, 0.86);
+  box-shadow: 0 8px 36px rgba(0, 0, 0, 0.45);
+}
+
+.controls-help h2 {
+  margin-top: 0;
+}
+
+.controls-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 42px;
+}
+
+.controls-columns h3 {
+  color: #f3d477;
+  letter-spacing: 0.1em;
+}
+
+.controls-columns p {
+  margin: 7px 0;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.menu-confirm {
+  max-width: 620px;
+  padding: 26px 32px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  background: rgba(8, 13, 18, 0.94);
+  font-size: 18px;
+  line-height: 1.8;
+}
+
+.pause-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.pause-menu .menu-hints {
+  margin-top: auto;
+}
+
+.menu-hints {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
+.inventory-menu {
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.17);
+}
+
+.menu-tabs button {
+  padding: 10px 24px;
+  color: rgba(255, 255, 255, 0.58);
+  border-bottom: 3px solid transparent;
+}
+
+.menu-tabs button.is-active {
+  color: #fff;
+  border-bottom-color: #f2d276;
+}
+
+.inventory-content {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.4fr) minmax(260px, 0.75fr);
+  gap: 42px;
+  min-height: 0;
+  flex: 1;
+}
+
+.inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(70px, 1fr));
+  grid-auto-rows: 112px;
+  align-content: start;
+  gap: 10px;
+}
+
+.inventory-slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.inventory-slot.is-selected {
+  border-color: #f3d477;
+  background: rgba(243, 212, 119, 0.16);
+  box-shadow: inset 0 0 0 2px rgba(243, 212, 119, 0.2);
+}
+
+.inventory-slot-name {
+  width: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-slot-count {
+  position: absolute;
+  right: 7px;
+  bottom: 5px;
+  font-size: 11px;
+}
+
+.inventory-detail {
+  padding: 28px;
+  border-left: 1px solid rgba(255, 255, 255, 0.18);
+  line-height: 1.8;
+}
+
+.inventory-detail h3 {
+  margin-top: 0;
+  font-size: 25px;
+  color: #f3d477;
+}
+
+.inventory-stats {
+  color: #aee18b;
+}
+
+.inventory-empty {
+  grid-column: 1 / -1;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.inventory-menu > .menu-hints {
+  margin-top: 18px;
+  text-align: right;
+}
+
+.item-icon {
+  --item-color: #fff;
+  position: relative;
+  display: block;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 7px;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
+}
+
+.item-icon::before {
+  position: absolute;
+  inset: 5px;
+  content: '';
+  background: var(--item-color);
+  border-radius: 50%;
+  transform: rotate(45deg);
+}
+
+.item-icon--leaf::before {
+  border-radius: 100% 0 100% 0;
+}
+
+.item-icon--mushroom::before {
+  inset: 6px 3px 18px;
+  border-radius: 22px 22px 7px 7px;
+  box-shadow: 13px 20px 0 -9px #eadcc5;
+}
+
+.item-icon--crystal::before {
+  border-radius: 2px;
+  clip-path: polygon(50% 0, 90% 45%, 68% 100%, 30% 100%, 8% 45%);
+}
+
+.item-icon--horn::before {
+  border-radius: 100% 0;
+  clip-path: polygon(0 100%, 100% 0, 60% 80%);
+}
+
+.item-icon--bow::before {
+  inset: 8px 6px;
+  border-radius: 50%;
+  background: transparent;
+  border: 3px solid var(--item-color);
+  border-left-color: transparent;
+  transform: rotate(-40deg);
+}
+
+.item-icon--sword::before {
+  inset: 2px 19px 10px;
+  border-radius: 2px;
+  box-shadow: 0 28px 0 3px #73502d;
+}
+
+.item-icon--gear::before {
+  inset: 4px;
+  border: 7px dotted rgba(255, 255, 255, 0.62);
+  border-radius: 50%;
+  background: var(--item-color);
+}
+
+.world-label-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.world-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.world-label[hidden] {
+  display: none;
+}
+
+.enemy-hp {
+  width: 66px;
+  height: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 5px;
+  background: rgba(10, 10, 10, 0.65);
+  overflow: hidden;
+}
+
+.enemy-hp span {
+  display: block;
+  height: 100%;
+  background: #df3f46;
+  transition: width 0.12s linear;
+}
+
+.enemy-alert {
+  color: #ffd94f;
+  font-size: 34px;
+  font-weight: 800;
+  text-shadow: 0 2px 4px #000;
+  animation: alert-pop 0.35s ease both;
+}
+
+.lock-on-marker {
+  color: #fff;
+  font-size: 48px;
+  line-height: 1;
+  text-shadow: 0 0 5px #000;
+}
+
+.game-over-screen {
+  z-index: 40;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(0, 0, 0, 0);
+  color: rgba(255, 255, 255, 0);
+  font-family: Georgia, serif;
+  font-size: clamp(48px, 8vw, 92px);
+  letter-spacing: 0.16em;
+  transition:
+    background 0.8s ease,
+    color 0.8s ease;
+}
+
+.game-over-screen.is-visible {
+  background: rgba(0, 0, 0, 0.92);
+  color: rgba(220, 52, 52, 0.95);
+}
+
+@keyframes menu-pulse {
+  50% {
+    opacity: 0.42;
+  }
+}
+
+@keyframes menu-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes alert-pop {
+  from {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .inventory-content {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-detail {
+    border-left: 0;
+  }
+
+  .controls-columns {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}
