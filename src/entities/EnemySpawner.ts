@@ -214,8 +214,19 @@ export class EnemySpawner implements System {
     const rng = mulberry32(hashInts(this.seed, cx, cz, 0xca4f));
     const forced = cx === this.spawnCellX && cz === this.spawnCellZ;
     if (!forced && rng() >= CAMP_CHANCE) return null;
-    const x = forced ? this.focus.x + 22 : (cx + 0.25 + rng() * 0.5) * ENEMY_CAMP_CELL_SIZE;
-    const z = forced ? this.focus.z + 10 : (cz + 0.25 + rng() * 0.5) * ENEMY_CAMP_CELL_SIZE;
+    let x: number;
+    let z: number;
+    if (forced) {
+      // The camp near the village depends only on the seed and the village, never on where the
+      // player happens to be standing when this cell is first evaluated.
+      const angle = rng() * Math.PI * 2;
+      const distance = VILLAGE_SAFE_RADIUS + 24 + rng() * 24;
+      x = this.spawnX + Math.cos(angle) * distance;
+      z = this.spawnZ + Math.sin(angle) * distance;
+    } else {
+      x = (cx + 0.25 + rng() * 0.5) * ENEMY_CAMP_CELL_SIZE;
+      z = (cz + 0.25 + rng() * 0.5) * ENEMY_CAMP_CELL_SIZE;
+    }
     if (Math.hypot(x - this.spawnX, z - this.spawnZ) < VILLAGE_SAFE_RADIUS) return null;
     const y = this.terrain.heightAt(x, z);
     const biome = this.terrain.biomeAt(x, z);
@@ -326,6 +337,11 @@ export class EnemySpawner implements System {
       camp,
       mulberry32(hashInts(this.seed, camp.cx, camp.cz, this.dayNight.elapsedDays)),
     );
+    // setCampActive() returns early when the camp is already active, so enemies created for an
+    // active camp must join the scene here.
+    if (camp.active) {
+      for (const enemy of camp.enemies) enemy.setActive(true, this.group);
+    }
   }
 
   private updateNightEnemy(): void {
@@ -334,7 +350,9 @@ export class EnemySpawner implements System {
       this.nightEnemy = null;
       return;
     }
-    if (this.nightEnemy?.isAlive) return;
+    // Keep the current wisp until onFinishedDeath clears it, so its death animation, loot and
+    // dispose still run.
+    if (this.nightEnemy) return;
     if (Math.hypot(this.focus.x - this.spawnX, this.focus.z - this.spawnZ) < VILLAGE_SAFE_RADIUS) {
       return;
     }
