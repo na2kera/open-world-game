@@ -175,6 +175,10 @@ export class GameplayFlow implements System {
     this.deps.resetCamera();
   }
 
+  update(dt: number): void {
+    this.boss?.update(dt);
+  }
+
   frameUpdate(): void {
     if (!this.deps.state.isSimulating) {
       this.updateBossBar();
