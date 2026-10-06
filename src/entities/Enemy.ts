@@ -1,6 +1,7 @@
 import {
   BufferAttribute,
   BufferGeometry,
+  CapsuleGeometry,
   ConeGeometry,
   Group,
   IcosahedronGeometry,
@@ -183,10 +184,11 @@ export class Enemy {
   dispose(): void {
     this.hpLabel.remove();
     this.alertLabel.remove();
+    const geometries = new Set<BufferGeometry>();
     this.root.traverse((object) => {
-      if (!(object instanceof Mesh)) return;
-      object.geometry.dispose();
+      if (object instanceof Mesh) geometries.add(object.geometry);
     });
+    for (const geometry of geometries) geometry.dispose();
     for (const material of this.materials) material.dispose();
     this.smoke?.geometry.dispose();
     this.smoke?.material.dispose();
@@ -281,28 +283,47 @@ export class Enemy {
     const scale = this.def.appearance.scale;
     const bodyMaterial = this.material(this.def.appearance.color);
     const accentMaterial = this.material(this.def.appearance.accent);
+    const eye = this.material(0x1c140f);
     if (this.def.appearance.floating) {
       const body = new Mesh(new IcosahedronGeometry(0.72 * scale, 1), bodyMaterial);
-      const leftWing = new Mesh(new ConeGeometry(0.45 * scale, 0.9 * scale, 3), accentMaterial);
+      const core = new Mesh(new IcosahedronGeometry(0.28 * scale, 1), accentMaterial);
+      const leftWing = new Mesh(new ConeGeometry(0.42 * scale, 1.05 * scale, 4), accentMaterial);
       const rightWing = leftWing.clone();
-      leftWing.position.x = 0.7 * scale;
-      rightWing.position.x = -0.7 * scale;
+      leftWing.position.set(0.85 * scale, 0.1 * scale, 0);
+      rightWing.position.set(-0.85 * scale, 0.1 * scale, 0);
       leftWing.rotation.z = -Math.PI / 2;
       rightWing.rotation.z = Math.PI / 2;
-      this.root.add(body, leftWing, rightWing);
+      const leftEye = new Mesh(new SphereGeometry(0.08 * scale, 8, 6), eye);
+      const rightEye = leftEye.clone();
+      leftEye.position.set(0.18 * scale, 0.16 * scale, 0.55 * scale);
+      rightEye.position.set(-0.18 * scale, 0.16 * scale, 0.55 * scale);
+      this.root.add(body, core, leftWing, rightWing, leftEye, rightEye);
     } else {
-      const body = new Mesh(new SphereGeometry(0.55 * scale, 8, 6), bodyMaterial);
+      const body = new Mesh(new SphereGeometry(0.55 * scale, 14, 10), bodyMaterial);
       body.position.y = 0.72 * scale;
-      body.scale.y = 1.25;
-      const head = new Mesh(new SphereGeometry(0.48 * scale, 8, 6), bodyMaterial);
-      head.position.y = 1.55 * scale;
-      const leftEar = new Mesh(new ConeGeometry(0.18 * scale, 0.65 * scale, 4), accentMaterial);
+      body.scale.set(1.05, 1.2, 0.9);
+      const head = new Mesh(new SphereGeometry(0.42 * scale, 14, 10), bodyMaterial);
+      head.position.y = 1.52 * scale;
+      const snout = new Mesh(new ConeGeometry(0.16 * scale, 0.38 * scale, 6), bodyMaterial);
+      snout.position.set(0, 1.42 * scale, 0.38 * scale);
+      snout.rotation.x = Math.PI / 2;
+      const leftEar = new Mesh(new ConeGeometry(0.16 * scale, 0.55 * scale, 5), accentMaterial);
       const rightEar = leftEar.clone();
-      leftEar.position.set(0.47 * scale, 1.63 * scale, 0);
-      rightEar.position.set(-0.47 * scale, 1.63 * scale, 0);
-      leftEar.rotation.z = -Math.PI / 2;
-      rightEar.rotation.z = Math.PI / 2;
-      this.root.add(body, head, leftEar, rightEar);
+      leftEar.position.set(0.42 * scale, 1.72 * scale, 0);
+      rightEar.position.set(-0.42 * scale, 1.72 * scale, 0);
+      leftEar.rotation.z = -0.4;
+      rightEar.rotation.z = 0.4;
+      const leftEye = new Mesh(new SphereGeometry(0.07 * scale, 8, 6), eye);
+      const rightEye = leftEye.clone();
+      leftEye.position.set(0.14 * scale, 1.58 * scale, 0.34 * scale);
+      rightEye.position.set(-0.14 * scale, 1.58 * scale, 0.34 * scale);
+      const arm = new Mesh(new CapsuleGeometry(0.09 * scale, 0.28 * scale, 3, 6), bodyMaterial);
+      const otherArm = arm.clone();
+      arm.position.set(0.48 * scale, 0.85 * scale, 0.05 * scale);
+      otherArm.position.set(-0.48 * scale, 0.85 * scale, 0.05 * scale);
+      arm.rotation.z = 0.5;
+      otherArm.rotation.z = -0.5;
+      this.root.add(body, head, snout, leftEar, rightEar, leftEye, rightEye, arm, otherArm);
     }
     this.root.traverse((object) => {
       if (object instanceof Mesh) object.castShadow = true;

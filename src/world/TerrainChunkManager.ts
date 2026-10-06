@@ -17,7 +17,53 @@ import { cellKey, distanceToCell, toCell } from './grid';
 import type { Terrain, Vec3Like } from './Terrain';
 
 const NO_LOD = -1;
-const TERRAIN_ROUGHNESS = 0.95;
+const TERRAIN_ROUGHNESS = 0.92;
+
+function createTerrainMaterial(): MeshStandardMaterial {
+  const material = new MeshStandardMaterial({
+    vertexColors: true,
+    roughness: TERRAIN_ROUGHNESS,
+    metalness: 0,
+  });
+  material.customProgramCacheKey = () => 'terrain-detail';
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vTerrainWorld;')
+      .replace(
+        '#include <worldpos_vertex>',
+        `#include <worldpos_vertex>
+         vTerrainWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+         varying vec3 vTerrainWorld;
+         float terrainHash(vec2 p) {
+           return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+         }`,
+      )
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+         vec2 cell = floor(vTerrainWorld.xz * 0.22);
+         float patch = terrainHash(cell);
+         float grain = terrainHash(vTerrainWorld.xz * 4.0);
+         diffuseColor.rgb *= 0.95 + 0.06 * patch + 0.03 * grain;`,
+      )
+      .replace(
+        '#include <normal_fragment_begin>',
+        `#include <normal_fragment_begin>
+         vec2 slopeCell = floor(vTerrainWorld.xz * 0.45);
+         normal = normalize(normal + vec3(
+           (terrainHash(slopeCell) - 0.5) * 0.18,
+           0.0,
+           (terrainHash(slopeCell.yx) - 0.5) * 0.18
+         ));`,
+      );
+  };
+  return material;
+}
 
 interface Chunk {
   readonly cx: number;
@@ -43,11 +89,7 @@ function lodForDistance(distance: number): number {
  */
 export class TerrainChunkManager implements System {
   readonly group = new Group();
-  private readonly material = new MeshStandardMaterial({
-    vertexColors: true,
-    roughness: TERRAIN_ROUGHNESS,
-    metalness: 0,
-  });
+  private readonly material = createTerrainMaterial();
   private readonly chunks = new Map<number, Chunk>();
   private readonly queue: Chunk[] = [];
   private readonly lastRefresh = { x: Number.POSITIVE_INFINITY, z: Number.POSITIVE_INFINITY };

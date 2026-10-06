@@ -10,6 +10,7 @@ import {
   InstancedMesh,
   Matrix4,
   MeshLambertMaterial,
+  MeshStandardMaterial,
   Quaternion,
   Vector3,
   type Material,
@@ -68,20 +69,26 @@ interface VegetationAssets {
 }
 
 function createAssets(): VegetationAssets {
-  const trunk = new CylinderGeometry(0.16, 0.26, 2.6, 6, 1);
-  trunk.translate(0, 1.3, 0);
+  const trunk = new CylinderGeometry(0.22, 0.46, 3.4, 8, 3);
+  trunk.translate(0, 1.7, 0);
 
-  const coneLow = new ConeGeometry(1.5, 2.8, 7);
-  coneLow.translate(0, 3.0, 0);
-  const coneHigh = new ConeGeometry(1.05, 2.2, 7);
-  coneHigh.translate(0, 4.4, 0);
-  const conifer = mergeGeometries([coneLow, coneHigh]) ?? coneLow;
+  const coneLow = new ConeGeometry(2.15, 3.4, 8);
+  coneLow.translate(0, 3.5, 0);
+  const coneMid = new ConeGeometry(1.55, 2.8, 8);
+  coneMid.translate(0, 5.5, 0);
+  const coneHigh = new ConeGeometry(0.85, 2.3, 7);
+  coneHigh.translate(0, 7.35, 0);
+  const conifer = mergeGeometries([coneLow, coneMid, coneHigh]) ?? coneLow;
 
-  const crownMain = new IcosahedronGeometry(1.7, 0);
-  crownMain.translate(0, 3.6, 0);
-  const crownSide = new IcosahedronGeometry(1.2, 0);
-  crownSide.translate(0.6, 4.6, 0.3);
-  const broadleaf = mergeGeometries([crownMain, crownSide]) ?? crownMain;
+  const crownMain = new IcosahedronGeometry(2.05, 1);
+  crownMain.translate(0, 4.7, 0);
+  const crownSide = new IcosahedronGeometry(1.35, 1);
+  crownSide.translate(1.15, 5.5, 0.4);
+  const crownBack = new IcosahedronGeometry(1.15, 1);
+  crownBack.translate(-0.7, 5.9, -0.55);
+  const crownTop = new IcosahedronGeometry(1.05, 1);
+  crownTop.translate(0.15, 6.7, 0.1);
+  const broadleaf = mergeGeometries([crownMain, crownSide, crownBack, crownTop]) ?? crownMain;
 
   return {
     trunk,
@@ -89,17 +96,29 @@ function createAssets(): VegetationAssets {
     broadleaf,
     rock: createRockGeometry(),
     grass: createGrassGeometry(),
-    trunkMaterial: new MeshLambertMaterial({ color: COLORS.trunk }),
-    coniferMaterial: new MeshLambertMaterial({ color: COLORS.conifer, flatShading: true }),
-    broadleafMaterial: new MeshLambertMaterial({ color: COLORS.broadleaf, flatShading: true }),
-    rockMaterial: new MeshLambertMaterial({ color: COLORS.rock, flatShading: true }),
+    trunkMaterial: new MeshStandardMaterial({ color: COLORS.trunk, roughness: 0.92 }),
+    coniferMaterial: new MeshStandardMaterial({
+      color: COLORS.conifer,
+      roughness: 0.86,
+      flatShading: true,
+    }),
+    broadleafMaterial: new MeshStandardMaterial({
+      color: COLORS.broadleaf,
+      roughness: 0.82,
+      flatShading: true,
+    }),
+    rockMaterial: new MeshStandardMaterial({
+      color: COLORS.rock,
+      roughness: 0.94,
+      flatShading: true,
+    }),
     grassMaterial: new MeshLambertMaterial({ vertexColors: true }),
   };
 }
 
 /** Low-poly rock: icosahedron with position-hashed jitter (shared vertices move together). */
 function createRockGeometry(): BufferGeometry {
-  const geometry = new IcosahedronGeometry(1, 1);
+  const geometry = new IcosahedronGeometry(1, 2);
   const position = geometry.getAttribute('position');
   for (let i = 0; i < position.count; i++) {
     const x = position.getX(i);
@@ -114,10 +133,10 @@ function createRockGeometry(): BufferGeometry {
   return geometry;
 }
 
-const GRASS_BLADES = 3;
-const GRASS_BLADE_WIDTH = 0.14;
-const GRASS_BLADE_HEIGHT = 0.75;
-const GRASS_BLADE_LEAN = 0.12;
+const GRASS_BLADES = 5;
+const GRASS_BLADE_WIDTH = 0.11;
+const GRASS_BLADE_HEIGHT = 0.95;
+const GRASS_BLADE_LEAN = 0.16;
 
 /** A tuft of crossing triangular blades; normals point up so it shades like the ground. */
 function createGrassGeometry(): BufferGeometry {
@@ -130,7 +149,7 @@ function createGrassGeometry(): BufferGeometry {
     const angle = (b / GRASS_BLADES) * Math.PI;
     const cx = Math.cos(angle) * GRASS_BLADE_WIDTH;
     const cz = Math.sin(angle) * GRASS_BLADE_WIDTH;
-    const lean = (b - 1) * GRASS_BLADE_LEAN;
+    const lean = (b - (GRASS_BLADES - 1) / 2) * GRASS_BLADE_LEAN;
     // Both windings, so each side is front-facing and keeps the upward normal.
     positions.push(-cx, 0, -cz, cx, 0, cz, lean, GRASS_BLADE_HEIGHT, -lean);
     positions.push(cx, 0, cz, -cx, 0, -cz, lean, GRASS_BLADE_HEIGHT, -lean);

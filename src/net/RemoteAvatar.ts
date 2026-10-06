@@ -1,13 +1,6 @@
-import {
-  CapsuleGeometry,
-  type Object3D,
-  Group,
-  Mesh,
-  MeshStandardMaterial,
-  SphereGeometry,
-  Vector3,
-} from 'three';
+import { type BufferGeometry, type Material, type Object3D, Group, Mesh, Vector3 } from 'three';
 
+import { createStandingPerson } from '../entities/figure';
 import type { WorldLabelLayer } from '../ui/WorldLabelLayer';
 import { damp, dampAngle } from '../utils/math';
 import type { NetPlayer } from './room';
@@ -27,17 +20,16 @@ export class RemoteAvatar {
     this.id = player.id;
     this.labelText = player.name;
     const hue = hashHue(player.id);
-    const tunic = new MeshStandardMaterial({ color: hsl(hue, 0.55, 0.42), roughness: 0.7 });
-    const body = new Mesh(new CapsuleGeometry(0.28, 0.7, 3, 6), tunic);
-    body.position.y = 0.9;
-    body.castShadow = true;
-    const head = new Mesh(
-      new SphereGeometry(0.22, 8, 6),
-      new MeshStandardMaterial({ color: 0xf1c9a5, roughness: 0.65 }),
+    this.root.add(
+      createStandingPerson({
+        tunic: hsl(hue, 0.5, 0.4),
+        skin: 0xf1c9a5,
+        hair: hsl(hue, 0.25, 0.22),
+        pants: 0x4a4036,
+        boots: 0x32261c,
+        belt: 0x2a2118,
+      }),
     );
-    head.position.y = 1.55;
-    head.castShadow = true;
-    this.root.add(body, head);
     this.root.name = `remote:${player.id}`;
     parent.add(this.root);
     this.apply(player, true);
@@ -72,12 +64,16 @@ export class RemoteAvatar {
   dispose(): void {
     this.label.remove();
     this.root.removeFromParent();
+    const geometries = new Set<BufferGeometry>();
+    const materials = new Set<Material>();
     this.root.traverse((object) => {
       if (!(object instanceof Mesh)) return;
-      object.geometry.dispose();
-      const materials = Array.isArray(object.material) ? object.material : [object.material];
-      for (const material of materials) material.dispose();
+      geometries.add(object.geometry);
+      const list = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of list) materials.add(material);
     });
+    for (const geometry of geometries) geometry.dispose();
+    for (const material of materials) material.dispose();
   }
 }
 

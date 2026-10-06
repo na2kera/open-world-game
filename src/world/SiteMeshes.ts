@@ -2,6 +2,7 @@ import {
   BoxGeometry,
   ConeGeometry,
   CylinderGeometry,
+  OctahedronGeometry,
   Group,
   Mesh,
   MeshStandardMaterial,
@@ -141,13 +142,34 @@ export class Landmarks {
     wall.castShadow = true;
     wall.receiveShadow = true;
     const roof = new Mesh(
-      new ConeGeometry(2.5, 1.6, 4),
+      new ConeGeometry(2.7, 1.7, 4),
       new MeshStandardMaterial({ color: 0x8d3d32, roughness: 0.85 }),
     );
-    roof.position.set(x, y + 2.9, z);
+    roof.position.set(x, y + 2.95, z);
     roof.rotation.y = Math.PI / 4;
     roof.castShadow = true;
-    this.group.add(wall, roof);
+    const door = new Mesh(
+      new BoxGeometry(0.7, 1.35, 0.08),
+      new MeshStandardMaterial({ color: 0x5a3924, roughness: 0.8 }),
+    );
+    door.position.set(x, y + 0.68, z + 1.62);
+    const windowMaterial = new MeshStandardMaterial({
+      color: 0xffd7a1,
+      emissive: 0xffb15a,
+      emissiveIntensity: 0.35,
+      roughness: 0.3,
+    });
+    const leftWindow = new Mesh(new BoxGeometry(0.42, 0.42, 0.08), windowMaterial);
+    const rightWindow = leftWindow.clone();
+    leftWindow.position.set(x - 0.85, y + 1.35, z + 1.62);
+    rightWindow.position.set(x + 0.85, y + 1.35, z + 1.62);
+    const chimney = new Mesh(
+      new CylinderGeometry(0.18, 0.22, 1.1, 6),
+      new MeshStandardMaterial({ color: 0x6e5344, roughness: 0.9 }),
+    );
+    chimney.position.set(x + 0.85, y + 3.15, z - 0.4);
+    chimney.castShadow = true;
+    this.group.add(wall, roof, door, leftWindow, rightWindow, chimney);
   }
 
   private buildTower(point: PlacedPoint): TowerSite {
@@ -158,7 +180,13 @@ export class Landmarks {
     );
     shaft.position.set(x, y + 8, z);
     shaft.castShadow = true;
-    this.group.add(shaft);
+    const cap = new Mesh(
+      new ConeGeometry(1.7, 2.2, 8),
+      new MeshStandardMaterial({ color: 0x6e7580, roughness: 0.7 }),
+    );
+    cap.position.set(x, y + 17.1, z);
+    cap.castShadow = true;
+    this.group.add(shaft, cap);
     this.collision.addCollider({ x, z, radius: 1.25, baseY: y, topY: y + 16 });
     const glowMaterial = new MeshStandardMaterial({
       color: 0x6ea8c9,
@@ -203,7 +231,18 @@ export class Landmarks {
     base.castShadow = true;
     const slab = new Mesh(new BoxGeometry(1.2, 0.8, 1.2), stone);
     slab.position.set(point.x, point.y + 1.8, point.z);
-    this.group.add(base, slab);
+    const crystal = new Mesh(
+      new OctahedronGeometry(0.38, 0),
+      new MeshStandardMaterial({
+        color: 0x9ad7ff,
+        emissive: 0x6ec8ff,
+        emissiveIntensity: 0.8,
+        roughness: 0.25,
+        metalness: 0.15,
+      }),
+    );
+    crystal.position.set(point.x, point.y + 2.55, point.z);
+    this.group.add(base, slab, crystal);
     this.collision.addCollider({
       x: point.x,
       z: point.z,

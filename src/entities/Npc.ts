@@ -1,7 +1,8 @@
-import { CapsuleGeometry, Group, Mesh, MeshStandardMaterial, SphereGeometry, Vector3 } from 'three';
+import { Group, Vector3 } from 'three';
 
 import type { Interactable } from '../items/Interactable';
 import type { WorldLabelLayer } from '../ui/WorldLabelLayer';
+import { createStandingPerson } from './figure';
 
 export interface NpcOptions {
   readonly id: string;
@@ -32,25 +33,17 @@ export class Npc implements Interactable {
     this.position = new Vector3(options.x, options.y, options.z);
     this.root.position.copy(this.position);
     this.root.scale.setScalar(options.scale);
-    const body = new Mesh(
-      new CapsuleGeometry(0.32, 0.7, 3, 6),
-      new MeshStandardMaterial({ color: options.color, roughness: 0.75 }),
+    this.root.add(
+      createStandingPerson({
+        tunic: options.color,
+        skin: 0xf1c9a5,
+        hair: 0x4a3428,
+        pants: 0x4e4034,
+        boots: 0x3a2a1c,
+        belt: 0x2c2118,
+        hat: options.hat,
+      }),
     );
-    body.position.y = 0.85;
-    body.castShadow = true;
-    const head = new Mesh(
-      new SphereGeometry(0.26, 8, 6),
-      new MeshStandardMaterial({ color: 0xf0d2b0, roughness: 0.7 }),
-    );
-    head.position.y = 1.55;
-    head.castShadow = true;
-    const hat = new Mesh(
-      new SphereGeometry(0.2, 8, 6),
-      new MeshStandardMaterial({ color: options.hat, roughness: 0.6 }),
-    );
-    hat.position.y = 1.78;
-    hat.scale.y = 0.55;
-    this.root.add(body, head, hat);
     options.parent.add(this.root);
     this.label = options.labels.add({
       className: 'npc-label',

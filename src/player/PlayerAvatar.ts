@@ -1,16 +1,21 @@
 import {
   BoxGeometry,
+  CylinderGeometry,
   Group,
   Mesh,
   MeshStandardMaterial,
+  TorusGeometry,
   Vector3,
   type BufferGeometry,
+  type Material,
   type Scene,
 } from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 import { PLAYER_CONFIG } from '../config';
 import type { System } from '../core/System';
 import { getItemDef } from '../data/items';
+import { dressPerson, PERSON } from '../entities/figure';
 import { damp } from '../utils/math';
 import type { PlayerController } from './PlayerController';
 
@@ -21,21 +26,6 @@ const COLORS = {
   pants: 0xe0d6b8,
   boots: 0x5a3b22,
   belt: 0x4a2e1a,
-} as const;
-
-/** Body proportions (units). */
-const BODY = {
-  hipHeight: 0.9,
-  torso: [0.46, 0.58, 0.28],
-  head: 0.32,
-  hairHeight: 0.12,
-  arm: [0.12, 0.55, 0.12],
-  shoulderX: 0.3,
-  shoulderY: 0.54,
-  leg: [0.16, 0.86, 0.18],
-  hipX: 0.12,
-  boot: [0.18, 0.18, 0.26],
-  belt: [0.48, 0.07, 0.3],
 } as const;
 
 /** Animation tuning. */
@@ -121,7 +111,7 @@ const REST_POSE: Readonly<Pose> = createPose();
 const tmpPosition = new Vector3();
 
 /**
- * Procedural low-poly humanoid (box limbs, blue tunic) that mirrors a {@link PlayerController}:
+ * Procedural humanoid that mirrors a {@link PlayerController}:
  * interpolated transform, gait swing scaled by speed and poses for jump / fall / climb /
  * slide / swim.
  */
@@ -135,7 +125,7 @@ export class PlayerAvatar implements System {
   private readonly rightLeg = new Group();
   private readonly weaponAttach = new Group();
   private readonly geometries: BufferGeometry[] = [];
-  private readonly materials: MeshStandardMaterial[] = [];
+  private readonly materials: Material[] = [];
   private readonly pose = createPose();
   private readonly target = createPose();
   private phase = 0;
@@ -178,7 +168,7 @@ export class PlayerAvatar implements System {
     p.rightLegX = damp(p.rightLegX, t.rightLegX, k, frameDt);
 
     this.tilt.rotation.x = p.bodyPitch;
-    this.hips.position.y = BODY.hipHeight + p.hipOffset;
+    this.hips.position.y = PERSON.hipHeight + p.hipOffset;
     this.leftArm.rotation.set(p.leftArmX, 0, p.leftArmZ);
     this.rightArm.rotation.set(p.rightArmX, 0, -p.rightArmZ);
     this.leftLeg.rotation.x = p.leftLegX;
@@ -195,14 +185,13 @@ export class PlayerAvatar implements System {
       this.weaponMesh = null;
     }
     if (!itemId || getItemDef(itemId)?.category !== 'weapon') return;
-    const geometry = new BoxGeometry(0.07, 0.82, 0.08);
+    const wooden = itemId === 'wooden-stick' || itemId === 'bokoblin-club';
     const material = new MeshStandardMaterial({
-      color: itemId === 'wooden-stick' || itemId === 'bokoblin-club' ? 0x7a4a28 : 0xb8c4ce,
-      roughness: 0.4,
-      metalness: itemId === 'wooden-stick' || itemId === 'bokoblin-club' ? 0 : 0.65,
+      color: wooden ? 0x7a4a28 : itemId === 'traveler-bow' ? 0xc4a36a : 0xd5dde6,
+      roughness: wooden || itemId === 'traveler-bow' ? 0.55 : 0.32,
+      metalness: wooden || itemId === 'traveler-bow' ? 0.05 : 0.72,
     });
-    this.weaponMesh = new Mesh(geometry, material);
-    this.weaponMesh.position.y = -0.42;
+    this.weaponMesh = new Mesh(weaponGeometry(itemId), material);
     this.weaponMesh.castShadow = true;
     this.weaponAttach.add(this.weaponMesh);
   }
@@ -281,72 +270,54 @@ export class PlayerAvatar implements System {
   }
 
   private build(): void {
-    const material = (color: number): MeshStandardMaterial => {
-      const m = new MeshStandardMaterial({ color, roughness: 0.8, metalness: 0 });
-      this.materials.push(m);
-      return m;
-    };
-    const tunic = material(COLORS.tunic);
-    const skin = material(COLORS.skin);
-    const hair = material(COLORS.hair);
-    const pants = material(COLORS.pants);
-    const boots = material(COLORS.boots);
-    const belt = material(COLORS.belt);
-
-    const box = (
-      size: readonly [number, number, number],
-      mat: MeshStandardMaterial,
-      parent: Group,
-      x: number,
-      y: number,
-      z = 0,
-    ): Mesh => {
-      const geometry = new BoxGeometry(size[0], size[1], size[2]);
-      this.geometries.push(geometry);
-      const mesh = new Mesh(geometry, mat);
-      mesh.position.set(x, y, z);
-      mesh.castShadow = true;
-      parent.add(mesh);
-      return mesh;
-    };
-
     this.root.add(this.tilt);
     this.tilt.add(this.hips);
-    this.hips.position.y = BODY.hipHeight;
-
-    box(BODY.torso, tunic, this.hips, 0, BODY.torso[1] / 2);
-    box(BODY.belt, belt, this.hips, 0, 0.04);
-    const headY = BODY.torso[1] + BODY.head / 2 + 0.02;
-    box([BODY.head, BODY.head, BODY.head], skin, this.hips, 0, headY);
-    box(
-      [BODY.head + 0.04, BODY.hairHeight, BODY.head + 0.04],
-      hair,
-      this.hips,
-      0,
-      headY + BODY.head / 2,
-      -0.02,
+    this.hips.position.y = PERSON.hipHeight;
+    this.leftArm.position.set(PERSON.shoulderX, PERSON.shoulderY, 0);
+    this.rightArm.position.set(-PERSON.shoulderX, PERSON.shoulderY, 0);
+    this.leftLeg.position.set(PERSON.hipX, 0, 0);
+    this.rightLeg.position.set(-PERSON.hipX, 0, 0);
+    this.hips.add(this.leftArm, this.rightArm, this.leftLeg, this.rightLeg);
+    dressPerson(
+      {
+        hips: this.hips,
+        leftArm: this.leftArm,
+        rightArm: this.rightArm,
+        leftLeg: this.leftLeg,
+        rightLeg: this.rightLeg,
+      },
+      COLORS,
+      { geometries: this.geometries, materials: this.materials },
     );
-
-    for (const [arm, side] of [
-      [this.leftArm, 1],
-      [this.rightArm, -1],
-    ] as const) {
-      arm.position.set(BODY.shoulderX * side, BODY.shoulderY, 0);
-      this.hips.add(arm);
-      box(BODY.arm, tunic, arm, 0, -BODY.arm[1] / 2 + 0.04);
-      box([BODY.arm[0], 0.12, BODY.arm[2]], skin, arm, 0, -BODY.arm[1] + 0.02);
-    }
-    this.weaponAttach.position.set(0, -BODY.arm[1], 0);
+    this.weaponAttach.position.set(0, PERSON.handY, 0);
     this.weaponAttach.rotation.z = Math.PI;
     this.rightArm.add(this.weaponAttach);
-    for (const [leg, side] of [
-      [this.leftLeg, 1],
-      [this.rightLeg, -1],
-    ] as const) {
-      leg.position.set(BODY.hipX * side, 0, 0);
-      this.hips.add(leg);
-      box(BODY.leg, pants, leg, 0, -BODY.leg[1] / 2);
-      box(BODY.boot, boots, leg, 0, -BODY.leg[1] + BODY.boot[1] / 2 - 0.04, 0.03);
-    }
   }
+}
+
+function weaponGeometry(itemId: string): BufferGeometry {
+  if (itemId === 'traveler-bow') {
+    const bow = new TorusGeometry(0.32, 0.025, 8, 18, Math.PI * 1.45);
+    bow.rotateZ(-0.35);
+    const string = new BoxGeometry(0.01, 0.56, 0.01);
+    return merged([bow, string]);
+  }
+  if (itemId === 'wooden-stick' || itemId === 'bokoblin-club') {
+    const club = new CylinderGeometry(itemId === 'bokoblin-club' ? 0.05 : 0.03, 0.055, 0.86, 7);
+    club.translate(0, 0.28, 0);
+    return club;
+  }
+  const blade = new BoxGeometry(0.045, 0.7, 0.012);
+  blade.translate(0, 0.28, 0);
+  const guard = new BoxGeometry(0.18, 0.03, 0.04);
+  const grip = new CylinderGeometry(0.018, 0.02, 0.16, 6);
+  grip.translate(0, -0.1, 0);
+  return merged([blade, guard, grip]);
+}
+
+function merged(parts: BufferGeometry[]): BufferGeometry {
+  const geometry = mergeGeometries(parts);
+  if (!geometry) return parts[0] ?? new BoxGeometry(0.05, 0.4, 0.05);
+  for (const part of parts) part.dispose();
+  return geometry;
 }
