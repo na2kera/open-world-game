@@ -6,6 +6,7 @@ import {
   Group,
   Mesh,
   MeshStandardMaterial,
+  TorusGeometry,
   type Scene,
 } from 'three';
 
@@ -174,20 +175,10 @@ export class Landmarks {
 
   private buildTower(point: PlacedPoint): TowerSite {
     const { x, y, z, id } = point;
-    const shaft = new Mesh(
-      new CylinderGeometry(1.15, 1.45, 16, 8),
-      new MeshStandardMaterial({ color: 0x8d97a3, roughness: 0.72 }),
-    );
-    shaft.position.set(x, y + 8, z);
-    shaft.castShadow = true;
-    const cap = new Mesh(
-      new ConeGeometry(1.7, 2.2, 8),
-      new MeshStandardMaterial({ color: 0x6e7580, roughness: 0.7 }),
-    );
-    cap.position.set(x, y + 17.1, z);
-    cap.castShadow = true;
-    this.group.add(shaft, cap);
-    this.collision.addCollider({ x, z, radius: 1.25, baseY: y, topY: y + 16 });
+    const stone = new MeshStandardMaterial({ color: 0x8d97a3, roughness: 0.78 });
+    const dark = new MeshStandardMaterial({ color: 0x4c555f, roughness: 0.84 });
+    const pale = new MeshStandardMaterial({ color: 0xc5ced6, roughness: 0.72 });
+    const timber = new MeshStandardMaterial({ color: 0x6a4630, roughness: 0.86 });
     const glowMaterial = new MeshStandardMaterial({
       color: 0x6ea8c9,
       emissive: 0x6ea8c9,
@@ -195,6 +186,66 @@ export class Landmarks {
       roughness: 0.4,
     });
     this.towerGlow.set(id, glowMaterial);
+    const add = (...meshes: Mesh[]): void => {
+      for (const mesh of meshes) {
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        this.group.add(mesh);
+      }
+    };
+
+    const plinth = new Mesh(new CylinderGeometry(1.7, 2.05, 1.15, 8), dark);
+    plinth.position.set(x, y + 0.5, z);
+    const shaft = new Mesh(new CylinderGeometry(1.12, 1.42, 15.2, 10), stone);
+    shaft.position.set(x, y + 8.2, z);
+    const cap = new Mesh(
+      new ConeGeometry(1.85, 2.4, 10),
+      new MeshStandardMaterial({ color: 0x6e7580, roughness: 0.7 }),
+    );
+    cap.position.set(x, y + 17.2, z);
+    const crystal = new Mesh(new OctahedronGeometry(0.55, 0), glowMaterial);
+    crystal.position.set(x, y + 18.7, z);
+    const gallery = new Mesh(new CylinderGeometry(2.15, 2.15, 0.22, 10), pale);
+    gallery.position.set(x, y + 15.55, z);
+    add(plinth, shaft, cap, crystal, gallery);
+
+    for (let rib = 0; rib < 6; rib++) {
+      const angle = (rib / 6) * Math.PI * 2;
+      const pier = new Mesh(new BoxGeometry(0.28, 14.4, 0.42), dark);
+      pier.position.set(x + Math.cos(angle) * 1.28, y + 7.6, z + Math.sin(angle) * 1.28);
+      pier.rotation.y = -angle;
+      add(pier);
+    }
+    for (const bandY of [4.2, 8.4, 12.4]) {
+      const band = new Mesh(new TorusGeometry(1.48, 0.09, 6, 12), pale);
+      band.position.set(x, y + bandY, z);
+      band.rotation.x = Math.PI / 2;
+      add(band);
+    }
+    const door = new Mesh(new BoxGeometry(0.7, 1.35, 0.12), dark);
+    door.position.set(x, y + 0.85, z - 1.55);
+    const lintel = new Mesh(new BoxGeometry(1.05, 0.16, 0.2), pale);
+    lintel.position.set(x, y + 1.55, z - 1.58);
+    add(door, lintel);
+    for (let slit = 0; slit < 4; slit++) {
+      const angle = slit * 1.4 + 0.6;
+      const window = new Mesh(new BoxGeometry(0.16, 0.7, 0.08), glowMaterial);
+      window.position.set(
+        x + Math.cos(angle) * 1.2,
+        y + 6.2 + slit * 1.8,
+        z + Math.sin(angle) * 1.2,
+      );
+      window.lookAt(x, window.position.y, z);
+      add(window);
+    }
+    for (let post = 0; post < 8; post++) {
+      const angle = (post / 8) * Math.PI * 2;
+      const column = new Mesh(new CylinderGeometry(0.08, 0.1, 1.15, 5), stone);
+      column.position.set(x + Math.cos(angle) * 1.95, y + 16.2, z + Math.sin(angle) * 1.95);
+      add(column);
+    }
+
+    this.collision.addCollider({ x, z, radius: 1.25, baseY: y, topY: y + 16 });
     const ring = new Mesh(new CylinderGeometry(1.7, 1.7, 0.28, 12), glowMaterial);
     let terminalX = x;
     let terminalY = y + 1.2;
@@ -204,14 +255,16 @@ export class Landmarks {
       const topY = y + (step + 1) * STAIR_RISE;
       const sx = x + Math.cos(angle) * STAIR_RADIUS;
       const sz = z + Math.sin(angle) * STAIR_RADIUS;
-      const tread = new Mesh(
-        new BoxGeometry(2.4, 0.22, 2.1),
-        new MeshStandardMaterial({ color: 0xb7c0c8, roughness: 0.8 }),
-      );
+      const tread = new Mesh(new BoxGeometry(2.4, 0.22, 2.1), pale);
       tread.position.set(sx, topY, sz);
       tread.rotation.y = -angle;
-      tread.castShadow = true;
-      this.group.add(tread);
+      const rail = new Mesh(new BoxGeometry(0.12, 0.72, 0.12), timber);
+      rail.position.set(
+        x + Math.cos(angle) * (STAIR_RADIUS + 0.95),
+        topY + 0.42,
+        z + Math.sin(angle) * (STAIR_RADIUS + 0.95),
+      );
+      add(tread, rail);
       this.platforms.add({ x: sx, z: sz, topY, halfX: 1.2, halfZ: 1.05, yaw: -angle });
       if (step === STAIR_STEPS - 1) {
         terminalX = sx;
@@ -220,7 +273,7 @@ export class Landmarks {
         ring.position.set(sx, topY + 1.1, sz);
       }
     }
-    this.group.add(ring);
+    add(ring);
     return { ...point, terminalX, terminalY, terminalZ };
   }
 

@@ -9,6 +9,7 @@ import {
   IcosahedronGeometry,
   InstancedMesh,
   Matrix4,
+  Mesh,
   MeshLambertMaterial,
   MeshStandardMaterial,
   Quaternion,
@@ -28,6 +29,7 @@ import {
 import type { System } from '../core/System';
 import { cellKey, distanceToCell, toCell } from './grid';
 import type { Terrain, Vec3Like } from './Terrain';
+import { createRuinGroup } from './ruinMeshes';
 import {
   generateCellPlacement,
   generateGrass,
@@ -50,6 +52,8 @@ const COLORS = {
   conifer: 0x2f6a35,
   broadleaf: 0x4f8a3a,
   rock: 0x8a8580,
+  cactus: 0x6f8f3c,
+  reed: 0x8aaa55,
   grassBase: 0x3d6b2a,
   grassTip: 0x9cc75a,
 } as const;
@@ -59,11 +63,15 @@ interface VegetationAssets {
   trunk: BufferGeometry;
   conifer: BufferGeometry;
   broadleaf: BufferGeometry;
+  cactus: BufferGeometry;
+  reed: BufferGeometry;
   rock: BufferGeometry;
   grass: BufferGeometry;
   trunkMaterial: Material;
   coniferMaterial: Material;
   broadleafMaterial: Material;
+  cactusMaterial: Material;
+  reedMaterial: Material;
   rockMaterial: Material;
   grassMaterial: Material;
 }
@@ -89,11 +97,27 @@ function createAssets(): VegetationAssets {
   const crownTop = new IcosahedronGeometry(1.05, 1);
   crownTop.translate(0.15, 6.7, 0.1);
   const broadleaf = mergeGeometries([crownMain, crownSide, crownBack, crownTop]) ?? crownMain;
+  const cactusStem = new CylinderGeometry(0.22, 0.28, 2.5, 7);
+  cactusStem.translate(0, 1.25, 0);
+  const cactusLeft = new CylinderGeometry(0.11, 0.14, 0.85, 6);
+  cactusLeft.translate(-0.42, 1.55, 0);
+  const cactusRight = new CylinderGeometry(0.1, 0.13, 0.7, 6);
+  cactusRight.translate(0.4, 1.15, 0.05);
+  const cactus = mergeGeometries([cactusStem, cactusLeft, cactusRight]) ?? cactusStem;
+  const reedA = new CylinderGeometry(0.035, 0.06, 1.45, 4);
+  reedA.translate(0, 0.72, 0);
+  const reedB = new CylinderGeometry(0.03, 0.05, 1.15, 4);
+  reedB.translate(0.16, 0.58, 0.08);
+  const reedC = new CylinderGeometry(0.025, 0.045, 0.95, 4);
+  reedC.translate(-0.12, 0.48, -0.06);
+  const reed = mergeGeometries([reedA, reedB, reedC]) ?? reedA;
 
   return {
     trunk,
     conifer,
     broadleaf,
+    cactus,
+    reed,
     rock: createRockGeometry(),
     grass: createGrassGeometry(),
     trunkMaterial: new MeshStandardMaterial({ color: COLORS.trunk, roughness: 0.92 }),
@@ -107,6 +131,12 @@ function createAssets(): VegetationAssets {
       roughness: 0.82,
       flatShading: true,
     }),
+    cactusMaterial: new MeshStandardMaterial({
+      color: COLORS.cactus,
+      roughness: 0.8,
+      flatShading: true,
+    }),
+    reedMaterial: new MeshStandardMaterial({ color: COLORS.reed, roughness: 0.75 }),
     rockMaterial: new MeshStandardMaterial({
       color: COLORS.rock,
       roughness: 0.94,
@@ -198,6 +228,7 @@ export class Vegetation implements System {
     private readonly terrain: Terrain,
     private readonly seed: number,
     private readonly focus: Readonly<Vec3Like>,
+    private readonly spawn: Readonly<Vec3Like> = focus,
   ) {
     this.group.name = 'vegetation';
     scene.add(this.group);
@@ -236,11 +267,15 @@ export class Vegetation implements System {
     }
     this.cells.clear();
     const a = this.assets;
-    for (const geometry of [a.trunk, a.conifer, a.broadleaf, a.rock, a.grass]) geometry.dispose();
+    for (const geometry of [a.trunk, a.conifer, a.broadleaf, a.cactus, a.reed, a.rock, a.grass]) {
+      geometry.dispose();
+    }
     for (const material of [
       a.trunkMaterial,
       a.coniferMaterial,
       a.broadleafMaterial,
+      a.cactusMaterial,
+      a.reedMaterial,
       a.rockMaterial,
       a.grassMaterial,
     ]) {
@@ -260,7 +295,14 @@ export class Vegetation implements System {
   }
 
   private ensurePlacement(cell: VegetationCell): CellPlacement {
-    cell.placement ??= generateCellPlacement(this.terrain, this.seed, cell.cx, cell.cz);
+    cell.placement ??= generateCellPlacement(
+      this.terrain,
+      this.seed,
+      cell.cx,
+      cell.cz,
+      this.spawn.x,
+      this.spawn.z,
+    );
     return cell.placement;
   }
 
@@ -311,19 +353,24 @@ export class Vegetation implements System {
     const a = this.assets;
     const group = new Group();
     const trees = placement.trees;
+    const trunks = trees.filter((t) => t.kind === 'conifer' || t.kind === 'broadleaf');
     const conifers = trees.filter((t) => t.kind === 'conifer');
     const broadleaves = trees.filter((t) => t.kind === 'broadleaf');
+    const cacti = trees.filter((t) => t.kind === 'cactus');
+    const reeds = trees.filter((t) => t.kind === 'reed');
 
-    if (trees.length > 0) {
-      const trunks = new InstancedMesh(a.trunk, a.trunkMaterial, trees.length);
-      trees.forEach((t, i) => {
-        trunks.setMatrixAt(i, composeUpright(t.x, t.y, t.z, t.rotation, t.scale));
+    if (trunks.length > 0) {
+      const trunkMesh = new InstancedMesh(a.trunk, a.trunkMaterial, trunks.length);
+      trunks.forEach((t, i) => {
+        trunkMesh.setMatrixAt(i, composeUpright(t.x, t.y, t.z, t.rotation, t.scale));
       });
-      group.add(finalize(trunks, true));
+      group.add(finalize(trunkMesh, true));
     }
     for (const [list, geometry, material] of [
       [conifers, a.conifer, a.coniferMaterial],
       [broadleaves, a.broadleaf, a.broadleafMaterial],
+      [cacti, a.cactus, a.cactusMaterial],
+      [reeds, a.reed, a.reedMaterial],
     ] as const) {
       if (list.length === 0) continue;
       const mesh = new InstancedMesh(geometry, material, list.length);
@@ -344,6 +391,7 @@ export class Vegetation implements System {
       });
       group.add(finalize(rocks, true));
     }
+    for (const ruin of placement.ruins) group.add(createRuinGroup(ruin));
     return group;
   }
 
@@ -365,9 +413,10 @@ export class Vegetation implements System {
 
   private removeObjects(cell: VegetationCell): void {
     if (!cell.objects) return;
-    for (const child of cell.objects.children) {
-      if (child instanceof InstancedMesh) child.dispose();
-    }
+    cell.objects.traverse((object) => {
+      if (object instanceof InstancedMesh) object.dispose();
+      else if (object instanceof Mesh) object.geometry.dispose();
+    });
     cell.objects.removeFromParent();
     cell.objects = null;
   }

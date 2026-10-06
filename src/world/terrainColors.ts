@@ -13,6 +13,8 @@ export const BIOME_COLORS: Readonly<Record<Biome, number>> = {
   highland: 0x8a9152,
   mountain: 0x80776c,
   snow: 0xf1f4f8,
+  desert: 0xc6a15a,
+  wetland: 0x3f6e58,
 };
 
 const GRASS = new Color(BIOME_COLORS.grassland);
@@ -20,6 +22,8 @@ const FOREST = new Color(BIOME_COLORS.forest);
 const HIGHLAND = new Color(BIOME_COLORS.highland);
 const MOUNTAIN = new Color(BIOME_COLORS.mountain);
 const SNOW = new Color(BIOME_COLORS.snow);
+const DESERT = new Color(BIOME_COLORS.desert);
+const MARSH = new Color(BIOME_COLORS.wetland);
 const SAND = new Color(BIOME_COLORS.beach);
 const SEABED = new Color(0x8c7f5c);
 const ROCK = new Color(0x75695e);
@@ -71,6 +75,15 @@ export function terrainColorAt(
   const b = BANDS;
   const t = BIOME_THRESHOLDS;
   out.copy(GRASS).lerp(FOREST, smoothstep(b.forestMoistureStart, b.forestMoistureEnd, moisture));
+  const dry =
+    smoothstep(-0.02, BIOME_THRESHOLDS.desertMoisture - 0.08, moisture) *
+    (1 - smoothstep(26, 48, height));
+  out.lerp(DESERT, dry);
+  const marsh =
+    smoothstep(0.32, BIOME_THRESHOLDS.wetlandMoisture + 0.12, moisture) *
+    smoothstep(BIOME_THRESHOLDS.wetlandHeight + 2, 4.5, height) *
+    (1 - smoothstep(3.4, 1.4, height));
+  out.lerp(MARSH, marsh);
   out.lerp(
     HIGHLAND,
     smoothstep(t.highland - b.highlandBlend, t.highland + b.highlandBlend, height),

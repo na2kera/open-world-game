@@ -67,7 +67,9 @@ describe('classifyBiome', () => {
   it('orders biomes by height', () => {
     expect(classifyBiome(-10, 0)).toBe('ocean');
     expect(classifyBiome(1, 0)).toBe('beach');
-    expect(classifyBiome(10, -0.5)).toBe('grassland');
+    expect(classifyBiome(10, -0.5)).toBe('desert');
+    expect(classifyBiome(10, -0.05)).toBe('grassland');
+    expect(classifyBiome(5, 0.7)).toBe('wetland');
     expect(classifyBiome(10, 0.5)).toBe('forest');
     expect(classifyBiome(60, 0)).toBe('highland');
     expect(classifyBiome(100, 0)).toBe('mountain');

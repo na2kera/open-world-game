@@ -2,7 +2,18 @@ import { VEGETATION_CELL_SIZE, WATER_LEVEL } from '../config';
 import { hashInts, mulberry32, randRange, type Rng } from '../utils/random';
 import { classifyBiome, type Biome, type Terrain } from './Terrain';
 
-export type TreeKind = 'conifer' | 'broadleaf';
+export type TreeKind = 'conifer' | 'broadleaf' | 'cactus' | 'reed';
+
+export type RuinKind =
+  'cottage' | 'stones' | 'arch' | 'cairn' | 'adobe' | 'stilt' | 'shelter' | 'wreck';
+
+export interface RuinPlacement {
+  x: number;
+  y: number;
+  z: number;
+  rotation: number;
+  kind: RuinKind;
+}
 
 export interface TreePlacement {
   x: number;
@@ -50,6 +61,7 @@ export interface CellPlacement {
   readonly cz: number;
   readonly trees: readonly TreePlacement[];
   readonly rocks: readonly RockPlacement[];
+  readonly ruins: readonly RuinPlacement[];
   readonly colliders: readonly Collider[];
   readonly grid: CellGrid;
 }
@@ -73,6 +85,8 @@ const TREE_CHANCE: Readonly<Record<Biome, number>> = {
   highland: 0.22,
   mountain: 0.03,
   snow: 0,
+  desert: 0.14,
+  wetland: 0.16,
 };
 const CONIFER_CHANCE: Readonly<Record<Biome, number>> = {
   ocean: 0,
@@ -82,6 +96,8 @@ const CONIFER_CHANCE: Readonly<Record<Biome, number>> = {
   highland: 0.95,
   mountain: 1,
   snow: 1,
+  desert: 0,
+  wetland: 0.05,
 };
 const ROCK_CHANCE: Readonly<Record<Biome, number>> = {
   ocean: 0,
@@ -91,6 +107,8 @@ const ROCK_CHANCE: Readonly<Record<Biome, number>> = {
   highland: 0.2,
   mountain: 0.4,
   snow: 0.15,
+  desert: 0.16,
+  wetland: 0.02,
 };
 const GRASS_CHANCE: Readonly<Record<Biome, number>> = {
   ocean: 0,
@@ -100,6 +118,8 @@ const GRASS_CHANCE: Readonly<Record<Biome, number>> = {
   highland: 0.25,
   mountain: 0,
   snow: 0,
+  desert: 0.18,
+  wetland: 0.72,
 };
 
 /** Placement limits. */
@@ -133,7 +153,13 @@ const COLLIDER = {
 const enum Salt {
   Objects = 11,
   Grass = 12,
+  Ruins = 13,
 }
+
+/** Ruins stay outside the village and its immediate fields. */
+const RUIN_CLEARANCE = 140;
+const RUIN_CHANCE = 0.62;
+const RUIN_TRIES = 6;
 
 /** Samples the cell grid for heights and moisture. */
 function buildGrid(terrain: Terrain, originX: number, originZ: number): CellGrid {
@@ -220,6 +246,8 @@ export function generateCellPlacement(
   seed: number,
   cx: number,
   cz: number,
+  spawnX = 0,
+  spawnZ = 0,
 ): CellPlacement {
   const originX = cx * VEGETATION_CELL_SIZE;
   const originZ = cz * VEGETATION_CELL_SIZE;
@@ -227,6 +255,7 @@ export function generateCellPlacement(
   const rng = mulberry32(hashInts(seed, cx, cz, Salt.Objects));
   const trees: TreePlacement[] = [];
   const rocks: RockPlacement[] = [];
+  const ruins: RuinPlacement[] = [];
   const colliders: Collider[] = [];
   const c: Candidate = { x: 0, z: 0, height: 0, normalY: 1, biome: 'ocean' };
   const minHeight = WATER_LEVEL + LIMITS.minHeightAboveWater;
@@ -238,21 +267,23 @@ export function generateCellPlacement(
     if (roll >= TREE_CHANCE[c.biome]) continue;
     const scale = randRange(rng, LIMITS.treeScale[0], LIMITS.treeScale[1]);
     const y = c.height - LIMITS.treeSink;
+    const kind = treeKind(c.biome, rng);
     trees.push({
       x: c.x,
       y,
       z: c.z,
       scale,
       rotation: rng() * Math.PI * 2,
-      kind: rng() < CONIFER_CHANCE[c.biome] ? 'conifer' : 'broadleaf',
+      kind,
       tint: randRange(rng, LIMITS.tint[0], LIMITS.tint[1]),
     });
+    const size = plantSize(kind);
     colliders.push({
       x: c.x,
       z: c.z,
-      radius: COLLIDER.treeRadius * scale,
+      radius: size.radius * scale,
       baseY: y,
-      topY: y + COLLIDER.treeHeight * scale,
+      topY: y + size.height * scale,
     });
   }
 
@@ -280,7 +311,8 @@ export function generateCellPlacement(
     });
   }
 
-  return { cx, cz, trees, rocks, colliders, grid };
+  placeRuin(seed, cx, cz, spawnX, spawnZ, grid, originX, originZ, ruins, colliders);
+  return { cx, cz, trees, rocks, ruins, colliders, grid };
 }
 
 /** Computes packed grass tufts for a cell (see {@link GRASS_STRIDE}). */
@@ -303,10 +335,132 @@ export function generateGrass(placement: CellPlacement, seed: number): Float32Ar
     out[o + 2] = c.z;
     out[o + 3] = randRange(rng, LIMITS.grassScale[0], LIMITS.grassScale[1]);
     out[o + 4] = rng() * Math.PI * 2;
-    out[o + 5] =
-      randRange(rng, LIMITS.tint[0], LIMITS.tint[1]) *
-      (c.biome === 'forest' ? LIMITS.forestGrassTint : 1);
+    const climateTint =
+      c.biome === 'forest'
+        ? LIMITS.forestGrassTint
+        : c.biome === 'desert'
+          ? 0.82
+          : c.biome === 'wetland'
+            ? 0.68
+            : 1;
+    out[o + 5] = randRange(rng, LIMITS.tint[0], LIMITS.tint[1]) * climateTint;
     count++;
   }
   return out.slice(0, count * GRASS_STRIDE);
+}
+
+function treeKind(biome: Biome, rng: Rng): TreeKind {
+  if (biome === 'desert') return 'cactus';
+  if (biome === 'wetland') return rng() < 0.72 ? 'reed' : 'broadleaf';
+  return rng() < CONIFER_CHANCE[biome] ? 'conifer' : 'broadleaf';
+}
+
+function plantSize(kind: TreeKind): { radius: number; height: number } {
+  if (kind === 'cactus') return { radius: 0.38, height: 3.2 };
+  if (kind === 'reed') return { radius: 0.22, height: 1.6 };
+  return { radius: COLLIDER.treeRadius, height: COLLIDER.treeHeight };
+}
+
+function placeRuin(
+  seed: number,
+  cx: number,
+  cz: number,
+  spawnX: number,
+  spawnZ: number,
+  grid: CellGrid,
+  originX: number,
+  originZ: number,
+  ruins: RuinPlacement[],
+  colliders: Collider[],
+): void {
+  const rng = mulberry32(hashInts(seed, cx, cz, Salt.Ruins));
+  if (rng() > RUIN_CHANCE) return;
+  const c: Candidate = { x: 0, z: 0, height: 0, normalY: 1, biome: 'ocean' };
+  const minHeight = WATER_LEVEL + 1.4;
+  for (let attempt = 0; attempt < RUIN_TRIES; attempt++) {
+    sampleCandidate(grid, originX, originZ, rng, c);
+    if (c.height < minHeight || c.normalY < 0.86) continue;
+    if (Math.hypot(c.x - spawnX, c.z - spawnZ) < RUIN_CLEARANCE) return;
+    const kind = ruinKind(c.biome, rng);
+    if (!kind) continue;
+    const rotation = rng() * Math.PI * 2;
+    ruins.push({ x: c.x, y: c.height, z: c.z, rotation, kind });
+    addRuinColliders(colliders, c.x, c.height, c.z, rotation, kind);
+    return;
+  }
+}
+
+function ruinKind(biome: Biome, rng: Rng): RuinKind | null {
+  switch (biome) {
+    case 'ocean':
+      return null;
+    case 'beach':
+      return 'wreck';
+    case 'desert':
+      return rng() < 0.65 ? 'adobe' : 'arch';
+    case 'wetland':
+      return rng() < 0.7 ? 'stilt' : 'wreck';
+    case 'grassland':
+      return rng() < 0.55 ? 'cottage' : 'stones';
+    case 'forest':
+      return rng() < 0.45 ? 'arch' : 'stones';
+    case 'highland':
+      return rng() < 0.5 ? 'cairn' : 'shelter';
+    case 'mountain':
+      return 'cairn';
+    case 'snow':
+      return rng() < 0.6 ? 'shelter' : 'cairn';
+  }
+}
+
+function addRuinColliders(
+  colliders: Collider[],
+  x: number,
+  y: number,
+  z: number,
+  yaw: number,
+  kind: RuinKind,
+): void {
+  const column = (ox: number, oz: number, radius: number, height: number, base = 0): void => {
+    const cos = Math.cos(yaw);
+    const sin = Math.sin(yaw);
+    colliders.push({
+      x: x + ox * cos - oz * sin,
+      z: z + ox * sin + oz * cos,
+      radius,
+      baseY: y + base,
+      topY: y + base + height,
+    });
+  };
+  switch (kind) {
+    case 'cottage':
+    case 'adobe':
+    case 'shelter':
+      column(0, 0, 1.55, kind === 'shelter' ? 1.7 : 2.5);
+      break;
+    case 'stones':
+      for (let index = 0; index < 5; index++) {
+        const angle = (index / 5) * Math.PI * 2;
+        column(Math.cos(angle) * 2.15, Math.sin(angle) * 2.15, 0.38, 1.3 + (index % 2) * 0.7);
+      }
+      break;
+    case 'arch':
+      column(-1.15, 0, 0.38, 2.4);
+      column(1.15, 0, 0.38, 2.4);
+      break;
+    case 'cairn':
+      column(0, 0, 0.85, 1.5);
+      break;
+    case 'stilt':
+      column(0, 0, 1.25, 0.28, 1.15);
+      column(-0.8, -0.7, 0.18, 1.3);
+      column(0.8, -0.7, 0.18, 1.3);
+      column(-0.8, 0.7, 0.18, 1.3);
+      column(0.8, 0.7, 0.18, 1.3);
+      break;
+    case 'wreck':
+      column(-0.7, 0, 0.22, 1.6);
+      column(0.8, 0.3, 0.22, 1.2);
+      break;
+  }
 }

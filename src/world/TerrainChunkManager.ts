@@ -47,9 +47,9 @@ function createTerrainMaterial(): MeshStandardMaterial {
         '#include <color_fragment>',
         `#include <color_fragment>
          vec2 cell = floor(vTerrainWorld.xz * 0.22);
-         float patch = terrainHash(cell);
+         float blotch = terrainHash(cell);
          float grain = terrainHash(vTerrainWorld.xz * 4.0);
-         diffuseColor.rgb *= 0.95 + 0.06 * patch + 0.03 * grain;`,
+         diffuseColor.rgb *= 0.95 + 0.06 * blotch + 0.03 * grain;`,
       )
       .replace(
         '#include <normal_fragment_begin>',

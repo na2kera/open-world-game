@@ -42,6 +42,7 @@ describe('generateCellPlacement', () => {
     const a = generateCellPlacement(terrain, DEFAULT_SEED, 1, -2);
     const b = generateCellPlacement(terrain, DEFAULT_SEED, 1, -2);
     expect(a.trees).toEqual(b.trees);
-    expect(a.colliders.length).toBe(a.trees.length + a.rocks.length);
+    expect(a.ruins).toEqual(b.ruins);
+    expect(a.colliders.length).toBeGreaterThanOrEqual(a.trees.length + a.rocks.length);
   });
 });

@@ -35,7 +35,7 @@ export class World implements System {
     this.terrain = new Terrain(seed);
     this.terrain.findSpawnPoint(this.spawnPoint);
     this.chunks = new TerrainChunkManager(scene, this.terrain, focus);
-    this.vegetation = new Vegetation(scene, this.terrain, seed, focus);
+    this.vegetation = new Vegetation(scene, this.terrain, seed, focus, this.spawnPoint);
     this.water = new Water(scene, focus);
     this.sky = new Sky(scene);
     this.dayNight = new DayNightCycle(scene, this.sky, this.water, focus);

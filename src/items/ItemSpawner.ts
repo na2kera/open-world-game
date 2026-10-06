@@ -34,6 +34,8 @@ const ITEM_CHOICES: Readonly<Record<Biome, readonly ItemId[]>> = {
   highland: ['herb', 'rock-salt'],
   mountain: ['rock-salt'],
   snow: ['rock-salt'],
+  desert: ['rock-salt'],
+  wetland: ['mushroom', 'herb', 'hylian-herb'],
 };
 
 const PLACEMENT_ATTEMPTS = 7;

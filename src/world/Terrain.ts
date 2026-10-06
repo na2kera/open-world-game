@@ -4,7 +4,16 @@ import { hashInts } from '../utils/random';
 import { domainWarp, fbm, ridged, SimplexNoise2D, type WarpedPoint } from './noise';
 
 /** Biome classification of a terrain point. */
-export type Biome = 'ocean' | 'beach' | 'grassland' | 'forest' | 'highland' | 'mountain' | 'snow';
+export type Biome =
+  | 'ocean'
+  | 'beach'
+  | 'grassland'
+  | 'forest'
+  | 'highland'
+  | 'mountain'
+  | 'snow'
+  | 'desert'
+  | 'wetland';
 
 /** Mutable 3-component vector (structurally compatible with THREE.Vector3). */
 export interface Vec3Like {
@@ -63,6 +72,12 @@ export const BIOME_THRESHOLDS = {
   snow: 130,
   /** Moisture above this turns grassland into forest. */
   forestMoisture: 0.08,
+  /** Moisture below this, under the highlands, is desert. */
+  desertMoisture: -0.28,
+  /** Moisture above this, on low ground, is wetland. */
+  wetlandMoisture: 0.48,
+  /** Wetland only exists below this height. */
+  wetlandHeight: 10,
 } as const;
 
 /** Spawn search parameters. */
@@ -100,6 +115,8 @@ export function classifyBiome(height: number, moisture: number): Biome {
   if (height > t.snow) return 'snow';
   if (height > t.mountain) return 'mountain';
   if (height > t.highland) return 'highland';
+  if (height < t.wetlandHeight && moisture > t.wetlandMoisture) return 'wetland';
+  if (moisture < t.desertMoisture) return 'desert';
   return moisture > t.forestMoisture ? 'forest' : 'grassland';
 }
 
