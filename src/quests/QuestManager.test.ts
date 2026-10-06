@@ -56,6 +56,40 @@ describe('QuestManager', () => {
     expect(saved?.counts).toEqual([0, 1, 0]);
   });
 
+  it('keeps guiding toward the main quest while side quests start and finish', () => {
+    const quests = new QuestManager(QUEST_DEFS);
+    quests.start('main-wake', true);
+    quests.complete('main-wake');
+    quests.start('main-towers', true);
+    quests.start('side-shrine');
+    expect(quests.trackedId).toBe('main-towers');
+    expect(quests.objectiveLine()).toBe('三つの塔：東の塔を起動する');
+    expect(quests.trackedLocationId()).toBe('tower-0');
+    quests.apply({ type: 'reach', locationId: 'shrine' });
+    expect(quests.status('side-shrine')).toBe('completed');
+    expect(quests.trackedId).toBe('main-towers');
+    for (const towerId of ['tower-0', 'tower-1', 'tower-2']) {
+      quests.apply({ type: 'activateTower', towerId });
+    }
+    expect(quests.objectiveLine()).toBe('三つの塔：報告する');
+    expect(quests.trackedLocationId()).toBe('npc:iori');
+  });
+
+  it('falls back to the latest unfinished side quest when no main quest is open', () => {
+    const quests = new QuestManager(QUEST_DEFS);
+    quests.start('main-wake', true);
+    quests.complete('main-wake');
+    quests.start('side-herbs');
+    quests.start('side-apples');
+    expect(quests.trackedId).toBe('side-apples');
+    quests.apply({ type: 'collect', itemId: 'apple', owned: 3 });
+    quests.turnIn('side-apples');
+    expect(quests.trackedId).toBe('side-herbs');
+    const restored = new QuestManager(QUEST_DEFS);
+    restored.restore(quests.toJSON());
+    expect(restored.trackedId).toBe('side-herbs');
+  });
+
   it('consumes collected items on turn-in and round-trips through save data', () => {
     const quests = new QuestManager(QUEST_DEFS);
     quests.start('main-wake', true);
@@ -74,6 +108,6 @@ describe('QuestManager', () => {
     restored.restore(quests.toJSON());
     expect(restored.status('side-herbs')).toBe('completed');
     expect(restored.status('main-wake')).toBe('completed');
-    expect(restored.trackedId).toBe('side-herbs');
+    expect(restored.trackedId).toBeNull();
   });
 });
