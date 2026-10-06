@@ -109,6 +109,18 @@ const tmpLayer = new Color();
 const tmpRock = new Color();
 
 /**
+ * How far a point has blended into desert sand, 0 (none) … 1 (full). This is the exact factor
+ * the ground colour uses, so vegetation can follow the visible sand rather than the hard
+ * biome threshold.
+ */
+export function drynessAt(height: number, moisture: number): number {
+  return (
+    smoothstep(-0.02, BIOME_THRESHOLDS.desertMoisture - 0.08, moisture) *
+    (1 - smoothstep(26, 48, height))
+  );
+}
+
+/**
  * Vertex colour for a terrain point, blending biome bands by height, moisture and slope.
  * Writes linear RGB into `out`.
  */
@@ -130,8 +142,7 @@ export function terrainColorAt(
 
   out.copy(LUSH_GRASS).lerp(DRY_GRASS, smoothstep(0.3, 0.7, patch));
   out.lerp(FOREST, smoothstep(b.forestMoistureStart, b.forestMoistureEnd, moisture));
-  const dry =
-    smoothstep(-0.02, t.desertMoisture - 0.08, moisture) * (1 - smoothstep(26, 48, height));
+  const dry = drynessAt(height, moisture);
   out.lerp(tmpLayer.copy(DESERT).multiplyScalar(climateShade), dry);
   const marsh =
     smoothstep(0.32, t.wetlandMoisture + 0.12, moisture) *

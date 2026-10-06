@@ -26,6 +26,7 @@ import type { WorldLabelLayer } from '../ui/WorldLabelLayer';
 import type { Landmarks, TowerSite } from '../world/SiteMeshes';
 import type { PlacedPoint } from '../world/landmarkPlacement';
 import type { Terrain, Vec3Like } from '../world/Terrain';
+import { COOKING_POT_OFFSET } from '../world/villageMeshes';
 import { StoryManager, storyAfterQuest, type StoryPoint } from './StoryManager';
 
 const SHRINE_RADIUS = 8;
@@ -87,8 +88,8 @@ export class GameplayFlow implements System {
       deps.interactions.register(this.towerInteractable(tower));
     }
     deps.interactions.register(this.shrineInteractable());
-    const potX = deps.spawn.x + 5.5;
-    const potZ = deps.spawn.z - 4.5;
+    const potX = deps.spawn.x + COOKING_POT_OFFSET.x;
+    const potZ = deps.spawn.z + COOKING_POT_OFFSET.z;
     const pot = new CookingPot(
       deps.landmarks.group,
       potX,

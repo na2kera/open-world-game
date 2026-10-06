@@ -16,6 +16,7 @@ import type { WorldCollision } from './WorldCollision';
 import { placeLandmarks, type PlacedPoint } from './landmarkPlacement';
 import type { Platforms } from './Platforms';
 import type { Terrain, Vec3Like } from './Terrain';
+import { buildVillage, type BuiltVillage } from './villageMeshes';
 
 export interface TowerSite extends PlacedPoint {
   readonly terminalX: number;
@@ -53,6 +54,7 @@ export class Landmarks {
   readonly group = new Group();
   private readonly beacon: Mesh;
   private readonly towerGlow = new Map<string, MeshStandardMaterial>();
+  private village: BuiltVillage | null = null;
 
   constructor(
     scene: Scene,
@@ -128,60 +130,18 @@ export class Landmarks {
     this.beacon.position.set(point.x, point.y + 12, point.z);
   }
 
-  private buildVillage(spawn: Readonly<Vec3Like>): void {
-    const spots = [
-      { x: 14, z: 5 },
-      { x: -13, z: 7 },
-      { x: 5, z: -14 },
-      { x: -11, z: -11 },
-    ];
-    for (const spot of spots) {
-      const x = spawn.x + spot.x;
-      const z = spawn.z + spot.z;
-      const y = this.terrain.heightAt(x, z);
-      if (y < 1) continue;
-      this.hut(x, y, z);
-      this.collision.addCollider({ x, z, radius: 2.1, baseY: y, topY: y + 3.2 });
+  /** Frees the village GPU resources and detaches the landmarks from the scene. */
+  dispose(): void {
+    if (this.village) {
+      for (const geometry of this.village.geometries) geometry.dispose();
+      for (const material of this.village.materials) material.dispose();
+      this.village = null;
     }
+    this.group.removeFromParent();
   }
 
-  private hut(x: number, y: number, z: number): void {
-    const wall = new Mesh(
-      new BoxGeometry(3.2, 2.2, 3.2),
-      new MeshStandardMaterial({ color: 0xc4a574, roughness: 0.9 }),
-    );
-    wall.position.set(x, y + 1.1, z);
-    wall.castShadow = true;
-    wall.receiveShadow = true;
-    const roof = new Mesh(
-      new ConeGeometry(2.7, 1.7, 4),
-      new MeshStandardMaterial({ color: 0x8d3d32, roughness: 0.85 }),
-    );
-    roof.position.set(x, y + 2.95, z);
-    roof.rotation.y = Math.PI / 4;
-    roof.castShadow = true;
-    const door = new Mesh(
-      new BoxGeometry(0.7, 1.35, 0.08),
-      new MeshStandardMaterial({ color: 0x5a3924, roughness: 0.8 }),
-    );
-    door.position.set(x, y + 0.68, z + 1.62);
-    const windowMaterial = new MeshStandardMaterial({
-      color: 0xffd7a1,
-      emissive: 0xffb15a,
-      emissiveIntensity: 0.35,
-      roughness: 0.3,
-    });
-    const leftWindow = new Mesh(new BoxGeometry(0.42, 0.42, 0.08), windowMaterial);
-    const rightWindow = leftWindow.clone();
-    leftWindow.position.set(x - 0.85, y + 1.35, z + 1.62);
-    rightWindow.position.set(x + 0.85, y + 1.35, z + 1.62);
-    const chimney = new Mesh(
-      new CylinderGeometry(0.18, 0.22, 1.1, 6),
-      new MeshStandardMaterial({ color: 0x6e5344, roughness: 0.9 }),
-    );
-    chimney.position.set(x + 0.85, y + 3.15, z - 0.4);
-    chimney.castShadow = true;
-    this.group.add(wall, roof, door, leftWindow, rightWindow, chimney);
+  private buildVillage(spawn: Readonly<Vec3Like>): void {
+    this.village = buildVillage(this.group, this.terrain, this.collision, spawn);
   }
 
   private buildTower(point: PlacedPoint): TowerSite {

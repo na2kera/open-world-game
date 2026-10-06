@@ -1,21 +1,20 @@
 import {
   BoxGeometry,
-  BufferAttribute,
   CapsuleGeometry,
   Color,
   ConeGeometry,
   CylinderGeometry,
   Group,
-  Matrix4,
   Mesh,
   MeshStandardMaterial,
-  Object3D,
   SphereGeometry,
   TorusGeometry,
   type BufferGeometry,
   type Material,
+  type Object3D,
 } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+
+import { MeshKit, paint, type Paint } from './meshKit';
 
 /** Shared proportions. Feet are y = 0 when the hips sit at {@link PERSON.hipHeight}. */
 export const PERSON = {
@@ -113,18 +112,7 @@ const FINISHES: Readonly<Record<Finish, { roughness: number; metalness: number }
   metal: { roughness: 0.4, metalness: 0.6 },
 };
 
-interface Paint {
-  readonly color: Color;
-  readonly finish: Finish;
-}
-
-interface Part {
-  readonly node: Object3D;
-  readonly geometry: BufferGeometry;
-  readonly paint: Paint;
-}
-
-const tmpMatrix = new Matrix4();
+type FigurePaint = Paint<Finish>;
 
 /** A person standing on y = 0, facing +Z. Each mesh owns its geometry. */
 export function createStandingPerson(palette: PersonPalette): Group {
@@ -152,22 +140,20 @@ export function createStandingPerson(palette: PersonPalette): Group {
 
 interface Kit {
   readonly w: number;
-  readonly parts: Part[];
-  /** Helper groups (elbow chain) removed once their parts are baked. */
-  readonly scaffolds: Object3D[];
-  readonly tunic: Paint;
-  readonly trim: Paint;
-  readonly sleeves: Paint;
-  readonly skin: Paint;
-  readonly hair: Paint;
-  readonly pants: Paint;
-  readonly boots: Paint;
-  readonly belt: Paint;
-  readonly buckle: Paint;
-  readonly sclera: Paint;
-  readonly pupil: Paint;
-  readonly brow: Paint;
-  readonly mouth: Paint;
+  readonly mesh: MeshKit<Finish>;
+  readonly tunic: FigurePaint;
+  readonly trim: FigurePaint;
+  readonly sleeves: FigurePaint;
+  readonly skin: FigurePaint;
+  readonly hair: FigurePaint;
+  readonly pants: FigurePaint;
+  readonly boots: FigurePaint;
+  readonly belt: FigurePaint;
+  readonly buckle: FigurePaint;
+  readonly sclera: FigurePaint;
+  readonly pupil: FigurePaint;
+  readonly brow: FigurePaint;
+  readonly mouth: FigurePaint;
 }
 
 /** Adds the body meshes under joints that the caller animates. */
@@ -178,12 +164,11 @@ export function dressPerson(
 ): void {
   const kit: Kit = {
     w: BUILD_WIDTH[palette.build ?? 'average'],
-    parts: [],
-    scaffolds: [],
+    mesh: new MeshKit<Finish>(),
     tunic: paint(palette.tunic, 'cloth'),
     trim:
       palette.trim === undefined
-        ? { color: new Color(palette.tunic).multiplyScalar(TRIM_SHADE), finish: 'cloth' }
+        ? paint(new Color(palette.tunic).multiplyScalar(TRIM_SHADE), 'cloth')
         : paint(palette.trim, 'cloth'),
     sleeves: paint(palette.sleeves ?? palette.tunic, 'cloth'),
     skin: paint(palette.skin, 'skin'),
@@ -194,7 +179,7 @@ export function dressPerson(
     buckle: paint(BUCKLE, 'metal'),
     sclera: paint(SCLERA, 'eye'),
     pupil: paint(palette.eye ?? DEFAULT_EYE, 'eye'),
-    brow: { color: new Color(palette.hair).multiplyScalar(BROW_SHADE), finish: 'hair' },
+    brow: paint(new Color(palette.hair).multiplyScalar(BROW_SHADE), 'hair'),
     mouth: paint(MOUTH, 'skin'),
   };
   dressTorso(limbs.hips, kit);
@@ -204,73 +189,15 @@ export function dressPerson(
   dressArm(limbs.rightArm, -1, kit);
   dressLeg(limbs.leftLeg, kit);
   dressLeg(limbs.rightLeg, kit);
-  bake(limbs, kit, bucket);
-}
-
-/**
- * Merges the placed parts into one mesh per (animated joint, finish). Each part's transform
- * relative to its joint is baked into its geometry together with its colour.
- */
-function bake(limbs: PersonLimbs, k: Kit, bucket: PersonBuckets): void {
-  const joints: readonly Group[] = [
-    limbs.hips,
-    limbs.leftArm,
-    limbs.rightArm,
-    limbs.leftLeg,
-    limbs.rightLeg,
-  ];
-  const batches = new Map<Group, Map<Finish, BufferGeometry[]>>();
-  for (const part of k.parts) {
-    part.node.updateMatrix();
-    tmpMatrix.copy(part.node.matrix);
-    let joint = part.node.parent;
-    while (joint && !joints.includes(joint as Group)) {
-      joint.updateMatrix();
-      tmpMatrix.premultiply(joint.matrix);
-      joint = joint.parent;
-    }
-    if (!joint) throw new Error('figure part is not under a person joint');
-    part.geometry.applyMatrix4(tmpMatrix);
-    paintVertices(part.geometry, part.paint.color);
-    part.node.removeFromParent();
-
-    let byFinish = batches.get(joint as Group);
-    if (!byFinish) batches.set(joint as Group, (byFinish = new Map()));
-    const list = byFinish.get(part.paint.finish);
-    if (list) list.push(part.geometry);
-    else byFinish.set(part.paint.finish, [part.geometry]);
-  }
-  for (const scaffold of k.scaffolds) scaffold.removeFromParent();
-
-  const materials = new Map<Finish, MeshStandardMaterial>();
-  for (const [joint, byFinish] of batches) {
-    for (const [finish, geometries] of byFinish) {
-      const merged = mergeGeometries(geometries);
-      if (!merged) throw new Error(`figure: could not merge ${finish} parts`);
-      for (const geometry of geometries) geometry.dispose();
-      bucket.geometries.push(merged);
-      let material = materials.get(finish);
-      if (!material) {
-        material = new MeshStandardMaterial({ vertexColors: true, ...FINISHES[finish] });
-        materials.set(finish, material);
-        bucket.materials.push(material);
-      }
-      const mesh = new Mesh(merged, material);
-      mesh.castShadow = true;
-      joint.add(mesh);
-    }
-  }
-}
-
-function paintVertices(geometry: BufferGeometry, color: Color): void {
-  const count = geometry.getAttribute('position').count;
-  const colors = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    colors[i * 3] = color.r;
-    colors[i * 3 + 1] = color.g;
-    colors[i * 3 + 2] = color.b;
-  }
-  geometry.setAttribute('color', new BufferAttribute(colors, 3));
+  kit.mesh.bake({
+    joints: [limbs.hips, limbs.leftArm, limbs.rightArm, limbs.leftLeg, limbs.rightLeg],
+    geometries: bucket.geometries,
+    material: (finish) => {
+      const material = new MeshStandardMaterial({ vertexColors: true, ...FINISHES[finish] });
+      bucket.materials.push(material);
+      return material;
+    },
+  });
 }
 
 function dressTorso(hips: Group, k: Kit): void {
@@ -457,7 +384,7 @@ function dressArm(arm: Group, side: 1 | -1, k: Kit): void {
   const upper = new Group();
   upper.rotation.x = ARM.upperTilt;
   arm.add(upper);
-  k.scaffolds.push(upper);
+  k.mesh.scaffold(upper);
   place(
     new CapsuleGeometry(0.058, 0.17, CAP_SEGMENTS, RADIAL_SEGMENTS),
     k.sleeves,
@@ -551,26 +478,15 @@ function dressLeg(leg: Group, k: Kit): void {
   foot.scale.set(1.15 * w, 1, 0.75);
 }
 
-/**
- * Registers a part at (x, y, z) under `parent`. Returns a transform node for further
- * rotation / scale; the geometry is baked into a merged mesh by {@link bake}.
- */
+/** Registers a part with the person's {@link MeshKit}; see {@link MeshKit.place}. */
 function place(
   geometry: BufferGeometry,
-  surface: Paint,
+  surface: FigurePaint,
   parent: Group,
   x: number,
   y: number,
   z: number,
   k: Kit,
 ): Object3D {
-  const node = new Object3D();
-  node.position.set(x, y, z);
-  parent.add(node);
-  k.parts.push({ node, geometry, paint: surface });
-  return node;
-}
-
-function paint(color: number, finish: Finish): Paint {
-  return { color: new Color(color), finish };
+  return k.mesh.place(geometry, surface, parent, x, y, z);
 }
