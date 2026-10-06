@@ -21,8 +21,9 @@ export class QuestManager {
     this.tracked = null;
   }
 
+  /** Quest the HUD guides toward: an unfinished main quest first, then the last side quest. */
   get trackedId(): string | null {
-    return this.tracked;
+    return this.resolveTracked();
   }
 
   definition(id: string): QuestDef | undefined {
@@ -125,7 +126,7 @@ export class QuestManager {
   }
 
   objectiveLine(): string {
-    const id = this.tracked;
+    const id = this.resolveTracked();
     const def = id ? this.defs.get(id) : undefined;
     const runtime = id ? this.entries.get(id) : undefined;
     if (!id || !def || !runtime || runtime.status === 'completed') return '自由に探索しよう';
@@ -137,7 +138,7 @@ export class QuestManager {
 
   /** Location id of the current tracked step, when it points somewhere. */
   trackedLocationId(): string | null {
-    const id = this.tracked;
+    const id = this.resolveTracked();
     const def = id ? this.defs.get(id) : undefined;
     const runtime = id ? this.entries.get(id) : undefined;
     if (!def || !runtime || runtime.status === 'completed') return null;
@@ -205,6 +206,25 @@ export class QuestManager {
       });
     }
     if (data.trackedId && this.entries.has(data.trackedId)) this.tracked = data.trackedId;
+  }
+
+  /**
+   * The main story always wins over side quests, so starting or finishing a side quest cannot
+   * hide the main objective. `tracked` only remembers the preferred side quest in between.
+   */
+  private resolveTracked(): string | null {
+    const preferred = this.tracked ? this.entries.get(this.tracked) : undefined;
+    const preferredIsMain = this.tracked ? this.defs.get(this.tracked)?.type === 'main' : false;
+    if (preferred && preferredIsMain && preferred.status !== 'completed') return this.tracked;
+    for (const [id, runtime] of this.entries) {
+      if (runtime.status !== 'completed' && this.defs.get(id)?.type === 'main') return id;
+    }
+    if (preferred && preferred.status !== 'completed') return this.tracked;
+    let latest: string | null = null;
+    for (const [id, runtime] of this.entries) {
+      if (runtime.status !== 'completed') latest = id;
+    }
+    return latest;
   }
 
   private prerequisitesMet(def: QuestDef): boolean {

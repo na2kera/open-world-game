@@ -63,14 +63,19 @@ export class MenuNavigator {
     this.index = Math.min(Math.max(0, Math.floor(index)), Math.max(0, this.itemCount - 1));
   }
 
+  /**
+   * Forgets held-direction repeat state and arms confirm/cancel so a button that is still down
+   * from the screen that opened this one must be released before it counts again. Otherwise a
+   * single press could open a confirmation and accept it on the next frame.
+   */
   resetEdges(): void {
     for (const direction of DIRECTIONS) {
       this.wasHeld[direction] = false;
       this.heldTime[direction] = 0;
       this.lastRepeat[direction] = 0;
     }
-    this.confirmHeld = false;
-    this.cancelHeld = false;
+    this.confirmHeld = true;
+    this.cancelHeld = true;
   }
 
   update(dt: number, input: MenuNavigationInput): MenuNavigationResult {

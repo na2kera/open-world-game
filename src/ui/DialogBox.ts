@@ -3,6 +3,7 @@ import type { System } from '../core/System';
 import { DialogCursor, type DialogEffect, type DialogScript } from '../dialog/DialogRuntime';
 import { getButtonLabel } from '../input/buttonLabels';
 import type { InputManager } from '../input/InputManager';
+import { readMenuInput } from './MenuNavigator';
 
 const CHARACTERS_PER_SECOND = 42;
 
@@ -52,8 +53,9 @@ export class DialogBox implements System {
     this.choiceIndex = 0;
     const buttons = this.input.state.buttons;
     this.confirmWasHeld = buttons.menuConfirm.held || buttons.interact.held;
-    this.upWasHeld = buttons.menuUp.held;
-    this.downWasHeld = buttons.menuDown.held;
+    const menu = readMenuInput(this.input.state);
+    this.upWasHeld = menu.up;
+    this.downWasHeld = menu.down;
     this.pendingEffects.length = 0;
     this.pendingEffects.push(...this.cursor.effects);
     this.element.hidden = false;
@@ -80,16 +82,19 @@ export class DialogBox implements System {
       }
       return;
     }
+    const menu = readMenuInput(this.input.state);
     if (choices.length > 0) {
-      if (buttons.menuUp.held && !this.upWasHeld) {
+      const before = this.choiceIndex;
+      if (menu.up && !this.upWasHeld) {
         this.choiceIndex = (this.choiceIndex - 1 + choices.length) % choices.length;
       }
-      if (buttons.menuDown.held && !this.downWasHeld) {
+      if (menu.down && !this.downWasHeld) {
         this.choiceIndex = (this.choiceIndex + 1) % choices.length;
       }
+      if (this.choiceIndex !== before) this.render(true);
     }
-    this.upWasHeld = buttons.menuUp.held;
-    this.downWasHeld = buttons.menuDown.held;
+    this.upWasHeld = menu.up;
+    this.downWasHeld = menu.down;
     if (!confirm) return;
     const step = cursor.advance(this.choiceIndex);
     if (!step) {

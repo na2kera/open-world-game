@@ -34,6 +34,7 @@ export class InventoryMenu implements System {
   private readonly unsubscribers: (() => void)[] = [];
   private tabIndex = 0;
   private shownEntries: readonly InventoryEntry[] = [];
+  private openValue = false;
   private inventoryHeld = false;
   private tabLeftHeld = false;
   private tabRightHeld = false;
@@ -82,6 +83,12 @@ export class InventoryMenu implements System {
     }
     if (this.state.mode !== 'menu') {
       this.element.hidden = true;
+      this.openValue = false;
+      this.inventoryHeld = inventoryHeld;
+      return;
+    }
+    if (!this.openValue) {
+      this.element.hidden = true;
       this.inventoryHeld = inventoryHeld;
       return;
     }
@@ -102,6 +109,7 @@ export class InventoryMenu implements System {
   }
 
   private open(): void {
+    this.openValue = true;
     this.element.hidden = false;
     this.navigator.resetEdges();
     this.dirty = true;
@@ -109,6 +117,7 @@ export class InventoryMenu implements System {
 
   private close(): void {
     if (!this.state.set('playing')) return;
+    this.openValue = false;
     this.element.hidden = true;
     this.onClosed();
   }
