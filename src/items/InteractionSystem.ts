@@ -1,4 +1,4 @@
-import { INTERACTION_DISTANCE, INTERACTION_FORWARD_DOT } from '../config';
+import { INTERACTION_DISTANCE, INTERACTION_FORWARD_DOT, INTERACTION_HEIGHT } from '../config';
 import type { EventBus } from '../core/EventBus';
 import type { GameEvents } from '../core/events';
 import type { System } from '../core/System';
@@ -8,7 +8,8 @@ import type { Interactable } from './Interactable';
 export type InteractionPromptListener = (interactable: Interactable | null) => void;
 
 /**
- * Selects the nearest available interactable within reach and roughly in front of the player.
+ * Selects the nearest available interactable within reach, roughly in front of the player and
+ * close to the feet in height, so a tower terminal cannot be used from the ground below it.
  * Registration is deliberately generic so Phase 2b NPCs can join the same prompt pipeline.
  */
 export class InteractionSystem implements System {
@@ -44,6 +45,7 @@ export class InteractionSystem implements System {
     let nearestDistanceSq = Number.POSITIVE_INFINITY;
     for (const interactable of this.interactables) {
       if (!interactable.isAvailable()) continue;
+      if (Math.abs(interactable.position.y - player.y) > INTERACTION_HEIGHT) continue;
       const dx = interactable.position.x - player.x;
       const dz = interactable.position.z - player.z;
       const maxDistance = INTERACTION_DISTANCE + interactable.radius;

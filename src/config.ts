@@ -198,6 +198,8 @@ export const ITEM_CELL_SIZE = 128;
 export const ITEM_ACTIVE_DISTANCE = 192;
 export const INTERACTION_DISTANCE = 2.5;
 export const INTERACTION_FORWARD_DOT = 0.15;
+/** Max vertical gap (metres) between the feet and an interactable before it stops being offered. */
+export const INTERACTION_HEIGHT = 2;
 
 export const MENU_CONFIG = {
   repeatDelay: 0.36,
