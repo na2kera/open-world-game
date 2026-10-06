@@ -63,6 +63,7 @@ export class Hud implements System {
   private readonly boss = document.createElement('div');
   private readonly bossName = document.createElement('div');
   private readonly bossFill = document.createElement('span');
+  private readonly online = document.createElement('div');
   private readonly unsubscribers: (() => void)[] = [];
   private readonly toastQueue: string[] = [];
   private interaction: Interactable | null = null;
@@ -86,7 +87,9 @@ export class Hud implements System {
     corner.className = 'hud-corner';
     this.hints.className = 'hud-hints hud-panel';
     this.clock.className = 'hud-clock hud-panel';
-    corner.append(this.hints, this.minimap.element, this.clock);
+    this.online.className = 'hud-clock hud-panel';
+    this.online.hidden = true;
+    corner.append(this.hints, this.minimap.element, this.clock, this.online);
 
     this.debugLine.className = 'hud-debug';
     this.debugLine.hidden = !deps.debug;
@@ -216,6 +219,12 @@ export class Hud implements System {
 
   setMapReveals(circles: readonly { x: number; z: number; radius: number }[]): void {
     this.minimap.setReveals(circles);
+  }
+
+  /** Shows how many people share the room. `null` hides the line for solo play. */
+  setOnline(count: number | null): void {
+    this.online.hidden = count === null;
+    if (count !== null) this.online.textContent = `仲間 ${count}`;
   }
 
   enqueueToast(message: string): void {

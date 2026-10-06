@@ -60,6 +60,7 @@ export class GameplayFlow implements System {
   private readonly shrine: PlacedPoint;
   private readonly arena: PlacedPoint;
   private boss: Enemy | null = null;
+  private bossDismissed = false;
   private shrineVisited = false;
   private readonly unsubscribers: (() => void)[] = [];
 
@@ -257,6 +258,21 @@ export class GameplayFlow implements System {
     }
   }
 
+  /** Awakens a tower another player already lit, including quest credit and the respawn point. */
+  syncTower(towerId: string): void {
+    const tower = this.towers.find((candidate) => candidate.id === towerId);
+    if (tower) this.activateTower(tower);
+  }
+
+  /** Removes an enemy defeated elsewhere. The boss stays down without repeating the ending. */
+  dismissEnemy(enemyId: string): void {
+    if (enemyId !== 'boss:blight-lord') return;
+    this.bossDismissed = true;
+    this.boss?.dispose();
+    this.boss = null;
+    this.deps.hud.setBoss(null, 0, 1);
+  }
+
   private activateTower(tower: TowerSite): void {
     if (!this.story.activateTower(tower.id)) return;
     this.deps.landmarks.setTowerActive(tower.id);
@@ -278,7 +294,8 @@ export class GameplayFlow implements System {
   }
 
   private maybeSpawnBoss(): void {
-    if (this.boss?.isAlive || this.quests.status('main-boss') !== 'active') return;
+    if (this.bossDismissed || this.boss?.isAlive || this.quests.status('main-boss') !== 'active')
+      return;
     const player = this.deps.player.position;
     if (Math.hypot(player.x - this.arena.x, player.z - this.arena.z) > ARENA_RADIUS) return;
     const def = getEnemyDef('blight-lord');

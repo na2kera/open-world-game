@@ -48,4 +48,5 @@ export interface GameEvents {
   'tower:activated': { towerId: string };
   'boss:defeated': { bossId: string };
   'story:chapter': { chapterId: string };
+  'world:pickup': { id: string };
 }

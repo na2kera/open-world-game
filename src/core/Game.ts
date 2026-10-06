@@ -34,6 +34,8 @@ import { InventoryMenu } from '../ui/InventoryMenu';
 import { PauseMenu } from '../ui/PauseMenu';
 import { TitleScreen } from '../ui/TitleScreen';
 import { WorldLabelLayer } from '../ui/WorldLabelLayer';
+import { MultiplayerSystem } from '../net/MultiplayerSystem';
+import type { MultiplayerConnection } from '../net/session';
 import { Landmarks } from '../world/SiteMeshes';
 import { Platforms } from '../world/Platforms';
 import { World } from '../world/World';
@@ -48,6 +50,8 @@ export interface GameOptions {
   seed?: number;
   /** Show debug HUD (coordinates, FPS). */
   debug?: boolean;
+  /** Shared room. Omitted when the server is down or `?offline` is set. */
+  multiplayer?: MultiplayerConnection;
 }
 
 /**
@@ -240,6 +244,21 @@ export class Game {
     this.addSystem(this.interactions);
     this.addSystem(this.dialog);
     this.addSystem(this.flow);
+    if (options.multiplayer) {
+      this.addSystem(
+        new MultiplayerSystem({
+          connection: options.multiplayer,
+          bus: this.bus,
+          player: this.player,
+          parent: this.scene,
+          labels: this.labels,
+          items: this.itemSpawner,
+          enemies: this.enemies,
+          flow: this.flow,
+          hud: this.hud,
+        }),
+      );
+    }
     this.addSystem(this.labels);
     this.addSystem({
       frameUpdate: () => {

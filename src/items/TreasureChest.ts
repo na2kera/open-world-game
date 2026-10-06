@@ -68,6 +68,12 @@ export class TreasureChest implements Interactable {
     this.options.onOpened(this);
   }
 
+  /** Removes the chest without granting its contents. */
+  retire(): void {
+    this.delivered = true;
+    this.dispose();
+  }
+
   dispose(): void {
     disposeObject(this.root);
     this.root.removeFromParent();

@@ -72,6 +72,12 @@ export class WorldItem implements Interactable {
     this.root.position.y = this.baseY + Math.sin(elapsed * 2.1 + this.phase) * 0.13;
   }
 
+  /** Removes the pickup from the world without granting it. */
+  retire(): void {
+    this.available = false;
+    this.dispose();
+  }
+
   dispose(): void {
     disposeObject(this.root);
     this.root.removeFromParent();

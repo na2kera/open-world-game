@@ -125,7 +125,7 @@ export class ItemSpawner implements System {
       y: Math.max(position.y, this.terrain.heightAt(position.x, position.z)),
       z: position.z + Math.sin(angle) * 0.55,
       inventory: this.inventory,
-      onCollected: (collected) => this.removeLooseItem(collected.id),
+      onCollected: (collected) => this.removeLooseItem(collected.id, true),
     });
     this.group.add(item.root);
     const unregister = this.interactions.register(item);
@@ -154,6 +154,37 @@ export class ItemSpawner implements System {
     const unregister = this.interactions.register(chest);
     this.looseChests.set(id, { chest, unregister });
     return chest;
+  }
+
+  /** Marks a world pickup as taken by someone else. The local inventory is unchanged. */
+  forgetPickup(id: string): void {
+    this.collectedItemIds.add(id);
+    this.removeLooseItem(id, false);
+    for (const cell of this.cells.values()) {
+      const index = cell.items.findIndex((item) => item.id === id);
+      const item = index >= 0 ? cell.items[index] : undefined;
+      if (!item) continue;
+      cell.items.splice(index, 1);
+      item.retire();
+    }
+  }
+
+  /** Marks a chest opened by someone else without granting its loot here. */
+  forgetChest(id: string): void {
+    this.openedChestIds.add(id);
+    const loose = this.looseChests.get(id);
+    if (loose) {
+      loose.unregister();
+      loose.chest.retire();
+      this.looseChests.delete(id);
+    }
+    for (const cell of this.cells.values()) {
+      const index = cell.chests.findIndex((chest) => chest.id === id);
+      const chest = index >= 0 ? cell.chests[index] : undefined;
+      if (!chest) continue;
+      cell.chests.splice(index, 1);
+      chest.retire();
+    }
   }
 
   restoreProgress(collectedItemIds: readonly string[], openedChestIds: readonly string[]): void {
@@ -275,6 +306,7 @@ export class ItemSpawner implements System {
         inventory: this.inventory,
         onCollected: (collected) => {
           this.collectedItemIds.add(collected.id);
+          this.bus.emit('world:pickup', { id: collected.id });
           const cell = this.cells.get(cellKey(cx, cz));
           if (!cell) return;
           const itemIndex = cell.items.indexOf(collected);
@@ -319,12 +351,13 @@ export class ItemSpawner implements System {
     this.bus.emit('chest:opened', { chestId: chest.id, itemId: chest.itemId });
   }
 
-  private removeLooseItem(id: string): void {
+  private removeLooseItem(id: string, announce: boolean): void {
     const loose = this.looseItems.get(id);
     if (!loose) return;
     loose.unregister();
-    loose.item.dispose();
+    loose.item.retire();
     this.looseItems.delete(id);
+    if (announce) this.bus.emit('world:pickup', { id });
   }
 
   private clearCells(): void {

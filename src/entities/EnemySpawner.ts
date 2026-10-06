@@ -54,6 +54,7 @@ export class EnemySpawner implements System {
   readonly group = new Group();
   private readonly camps = new Map<number, Camp>();
   private readonly cleared = new Map<string, number>();
+  private readonly forgotten = new Set<string>();
   private readonly spawnCellX: number;
   private readonly spawnCellZ: number;
   private readonly spawnX: number;
@@ -90,6 +91,27 @@ export class EnemySpawner implements System {
     }
     if (this.nightEnemy?.active && this.nightEnemy.isAlive) result.push(this.nightEnemy);
     return result;
+  }
+
+  /**
+   * Removes an enemy another player already defeated.
+   * No kill event is emitted, so this player's quests stay their own.
+   */
+  forgetEnemy(id: string): void {
+    this.forgotten.add(id);
+    if (this.nightEnemy?.id === id) {
+      this.nightEnemy.dispose();
+      this.nightEnemy = null;
+      return;
+    }
+    for (const camp of this.camps.values()) {
+      const index = camp.enemies.findIndex((enemy) => enemy.id === id);
+      const enemy = index >= 0 ? camp.enemies[index] : undefined;
+      if (!enemy) continue;
+      enemy.dispose();
+      camp.enemies.splice(index, 1);
+      this.markCampQuiet(camp);
+    }
   }
 
   get campProgress(): readonly CampProgress[] {
@@ -235,11 +257,13 @@ export class EnemySpawner implements System {
     for (let index = 0; index < count; index++) {
       const angle = (index / count) * Math.PI * 2 + rng() * 0.5;
       const radius = 4 + rng() * 2.5;
+      const id = `${camp.id}:enemy:${index}`;
+      if (this.forgotten.has(id)) continue;
       const defId = index === count - 1 && rng() < 0.45 ? 'bokoblin-blue' : 'bokoblin-red';
       const def = getEnemyDef(defId);
       if (!def) continue;
       const enemy = new Enemy({
-        id: `${camp.id}:enemy:${index}`,
+        id,
         def,
         x: camp.x + Math.cos(angle) * radius,
         z: camp.z + Math.sin(angle) * radius,
@@ -251,6 +275,18 @@ export class EnemySpawner implements System {
       });
       camp.enemies.push(enemy);
     }
+    this.markCampQuiet(camp);
+  }
+
+  private markCampQuiet(camp: Camp): void {
+    if (camp.enemies.some((enemy) => enemy.isAlive)) return;
+    if (camp.clearedAtDay !== null || camp.enemies.length > 0) return;
+    const prefix = `${camp.id}:enemy:`;
+    const removed = [...this.forgotten].filter((id) => id.startsWith(prefix));
+    if (removed.length === 0) return;
+    camp.clearedAtDay = this.dayNight.elapsedDays;
+    this.cleared.set(camp.id, camp.clearedAtDay);
+    for (const id of removed) this.forgotten.delete(id);
   }
 
   private finishEnemyDeath(camp: Camp, enemy: Enemy): void {
