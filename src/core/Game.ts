@@ -27,6 +27,7 @@ import type { SaveData } from '../save/SaveData';
 import { SaveManager } from '../save/SaveManager';
 import { SaveSystem } from '../save/SaveSystem';
 import { GameplayFlow } from '../story/GameplayFlow';
+import { CookingMenu } from '../ui/CookingMenu';
 import { DialogBox } from '../ui/DialogBox';
 import { GameOverScreen } from '../ui/GameOverScreen';
 import { Hud } from '../ui/Hud';
@@ -195,8 +196,11 @@ export class Game {
       camera: this.cameraRig,
       input: this.input.state,
       inventory: this.inventory,
-      getEnemies: () => this.enemies.targetableEnemies,
+      getEnemies: () => [...this.enemies.targetableEnemies, ...this.flow.extraEnemies],
       labels: this.labels,
+      terrain: this.world.terrain,
+      collision: this.world.collision,
+      parent: this.scene,
     });
     this.saves = new SaveSystem({
       bus: this.bus,
@@ -211,6 +215,10 @@ export class Game {
       this.world.collision,
     );
     this.dialog = new DialogBox(container, this.state, this.input);
+    const cooking = new CookingMenu(container, this.state, this.input, this.inventory, () =>
+      this.flow.releaseCookingPot(),
+    );
+    this.addSystem(cooking);
     this.flow = new GameplayFlow({
       bus: this.bus,
       state: this.state,
@@ -224,6 +232,7 @@ export class Game {
       landmarks: this.landmarks,
       spawn: this.world.spawnPoint,
       dialog: this.dialog,
+      cooking,
       save: () => this.saves.save('auto'),
       resetCamera: () => this.cameraRig.resetBehindPlayer(),
     });
@@ -427,6 +436,8 @@ export class Game {
     this.saves.resetSavePoint();
     this.inventory.clear();
     this.inventory.add('wooden-stick');
+    this.inventory.add('traveler-bow');
+    this.inventory.add('arrow', 20);
     this.inventory.add('apple', 1);
     this.inventory.equipWeapon('wooden-stick');
     this.itemSpawner.reset();

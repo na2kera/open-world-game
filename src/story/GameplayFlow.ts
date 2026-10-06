@@ -11,12 +11,14 @@ import { QUEST_DEFS } from '../data/quests';
 import { selectScript, type DialogContext, type DialogEffect } from '../dialog/DialogRuntime';
 import { Enemy } from '../entities/Enemy';
 import { Npc } from '../entities/Npc';
+import { CookingPot } from '../items/CookingPot';
 import type { Interactable } from '../items/Interactable';
 import type { InteractionSystem } from '../items/InteractionSystem';
 import type { Inventory } from '../items/Inventory';
 import type { PlayerController } from '../player/PlayerController';
 import { QuestManager } from '../quests/QuestManager';
 import type { QuestChange } from '../quests/types';
+import type { CookingMenu } from '../ui/CookingMenu';
 import type { Hud } from '../ui/Hud';
 import type { DialogBox } from '../ui/DialogBox';
 import type { MinimapMarker } from '../ui/Minimap';
@@ -47,6 +49,7 @@ export interface GameplayFlowDeps {
   readonly landmarks: Landmarks;
   readonly spawn: Readonly<Vec3Like>;
   readonly dialog: DialogBox;
+  readonly cooking: CookingMenu;
   readonly save: () => void;
   readonly resetCamera: () => void;
 }
@@ -59,6 +62,7 @@ export class GameplayFlow implements System {
   private readonly towers: readonly TowerSite[];
   private readonly shrine: PlacedPoint;
   private readonly arena: PlacedPoint;
+  private readonly pot: CookingPot;
   private boss: Enemy | null = null;
   private bossDismissed = false;
   private shrineVisited = false;
@@ -83,6 +87,20 @@ export class GameplayFlow implements System {
       deps.interactions.register(this.towerInteractable(tower));
     }
     deps.interactions.register(this.shrineInteractable());
+    const potX = deps.spawn.x + 5.5;
+    const potZ = deps.spawn.z - 4.5;
+    const pot = new CookingPot(
+      deps.landmarks.group,
+      potX,
+      deps.terrain.heightAt(potX, potZ),
+      potZ,
+      () => {
+        deps.cooking.open();
+        if (deps.cooking.isOpen) pot.setAvailable(false);
+      },
+    );
+    this.pot = pot;
+    deps.interactions.register(pot);
     this.unsubscribers.push(
       deps.bus.on('enemy:killed', ({ defId }) => {
         if (defId === 'blight-lord') {
@@ -102,6 +120,10 @@ export class GameplayFlow implements System {
       }),
     );
     this.refreshPresentation();
+  }
+
+  releaseCookingPot(): void {
+    this.pot.setAvailable(true);
   }
 
   get extraEnemies(): readonly Enemy[] {

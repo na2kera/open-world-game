@@ -276,6 +276,12 @@ export class PlayerController implements System {
       this.setState('swim');
       return;
     }
+    if (this.jumpBufferTimer > 0) {
+      this.jump();
+      this.moveHorizontal(dt);
+      return;
+    }
+    if (this.climbObstacle(dt)) return;
     if (this.onPlatform(p.x, p.y, p.z)) {
       this.surfaceNormal.set(0, 1, 0);
     } else {
@@ -304,12 +310,6 @@ export class PlayerController implements System {
     }
 
     this.updateSafeGround(dt, groundY);
-
-    if (this.jumpBufferTimer > 0) {
-      this.jump();
-      this.moveHorizontal(dt);
-      return;
-    }
 
     this.moveHorizontal(dt);
     const newGround = this.surfaceY(p.x, p.y, p.z);
@@ -544,16 +544,57 @@ export class PlayerController implements System {
     this.position.z = terrain.clampToWorld(this.position.z, PLAYER_CONFIG.worldEdgeMargin);
   }
 
-  /** Terrain height, or a stair landing when the feet are close enough to step up. */
+  /** Terrain height, a stair, or the top of a rock or tree under the feet. */
   private surfaceY(x: number, feetY: number, z: number): number {
     const terrainY = this.deps.terrain.heightAt(x, z);
-    const platformY = this.deps.platforms?.heightAt(x, feetY, z);
-    return platformY === undefined ? terrainY : Math.max(terrainY, platformY);
+    const raised = this.raisedY(x, feetY, z);
+    return raised === undefined ? terrainY : Math.max(terrainY, raised);
   }
 
   private onPlatform(x: number, feetY: number, z: number): boolean {
+    const raised = this.raisedY(x, feetY, z);
+    return raised !== undefined && raised > this.deps.terrain.heightAt(x, z) + 0.2;
+  }
+
+  private raisedY(x: number, feetY: number, z: number): number | undefined {
     const platformY = this.deps.platforms?.heightAt(x, feetY, z);
-    return platformY !== undefined && platformY > this.deps.terrain.heightAt(x, z) + 0.2;
+    const supportY = this.deps.collision.supportHeight(x, feetY, z);
+    if (platformY === undefined) return supportY;
+    if (supportY === undefined) return platformY;
+    return Math.max(platformY, supportY);
+  }
+
+  /** Climbs the rock or trunk being walked into. Returns true when that replaces normal walking. */
+  private climbObstacle(dt: number): boolean {
+    if (this.moveAmount <= MOVE_EPSILON || !this.stamina.canExert) return false;
+    const p = this.position;
+    const climb = this.deps.collision.climbTarget(
+      p.x,
+      p.y,
+      p.z,
+      PLAYER_CONFIG.radius,
+      tmpWish.x,
+      tmpWish.y,
+    );
+    if (!climb) return false;
+    p.y = Math.min(climb.topY, p.y + PLAYER_CONFIG.climbSpeed * dt);
+    const dx = p.x - climb.x;
+    const dz = p.z - climb.z;
+    const distance = Math.hypot(dx, dz);
+    const keep = climb.radius * 0.55;
+    if (p.y >= climb.topY - 0.02) {
+      p.y = climb.topY;
+      if (distance > keep && distance > 0) {
+        p.x = climb.x + (dx / distance) * keep;
+        p.z = climb.z + (dz / distance) * keep;
+      }
+    }
+    this.horizontal.set(0, 0);
+    this.velocity.set(0, PLAYER_CONFIG.climbSpeed, 0);
+    this.drain = STAMINA_CONFIG.climbDrain;
+    this.surfaceNormal.set(0, 1, 0);
+    this.fallStartY = p.y;
+    return true;
   }
 
   private updateSafeGround(dt: number, groundY: number): void {

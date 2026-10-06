@@ -49,6 +49,24 @@ export class ComboInputBuffer {
   }
 }
 
+/** True when the ground rises through the line of sight. The last stretch is ignored. */
+export function isTerrainOccluded(
+  heightAt: (x: number, z: number) => number,
+  from: Readonly<{ x: number; y: number; z: number }>,
+  to: Readonly<{ x: number; y: number; z: number }>,
+): boolean {
+  const samples = 6;
+  for (let index = 1; index < samples; index++) {
+    const t = index / samples;
+    if (t > 0.82) break;
+    const x = from.x + (to.x - from.x) * t;
+    const y = from.y + (to.y - from.y) * t;
+    const z = from.z + (to.z - from.z) * t;
+    if (heightAt(x, z) > y + 0.35) return true;
+  }
+  return false;
+}
+
 /** True when `target` is inside the horizontal forward-facing attack sector. */
 export function isPointInAttackArc(
   origin: Point2,

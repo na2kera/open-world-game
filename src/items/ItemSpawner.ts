@@ -29,8 +29,8 @@ interface ItemCell {
 const ITEM_CHOICES: Readonly<Record<Biome, readonly ItemId[]>> = {
   ocean: [],
   beach: ['rock-salt'],
-  grassland: ['herb', 'hylian-herb', 'apple'],
-  forest: ['mushroom', 'acorn', 'apple'],
+  grassland: ['herb', 'hylian-herb', 'apple', 'arrow'],
+  forest: ['mushroom', 'acorn', 'apple', 'arrow'],
   highland: ['herb', 'rock-salt'],
   mountain: ['rock-salt'],
   snow: ['rock-salt'],

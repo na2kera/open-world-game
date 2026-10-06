@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ComboInputBuffer, isPointInAttackArc } from './combatMath';
+import { ComboInputBuffer, isPointInAttackArc, isTerrainOccluded } from './combatMath';
 
 describe('ComboInputBuffer', () => {
   it('holds an early press and consumes it once', () => {
@@ -16,6 +16,15 @@ describe('ComboInputBuffer', () => {
     buffer.press();
     buffer.update(0.11);
     expect(buffer.hasInput).toBe(false);
+  });
+});
+
+describe('isTerrainOccluded', () => {
+  it('rejects a line that passes through a hill and keeps a clear line', () => {
+    const heightAt = (x: number) => (x > 4 && x < 8 ? 6 : 0);
+    const from = { x: 0, y: 1.5, z: 0 };
+    expect(isTerrainOccluded(heightAt, from, { x: 12, y: 1.5, z: 0 })).toBe(true);
+    expect(isTerrainOccluded(heightAt, from, { x: 3, y: 1.5, z: 0 })).toBe(false);
   });
 });
 

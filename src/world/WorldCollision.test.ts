@@ -25,6 +25,15 @@ describe('WorldCollision', () => {
     expect(collision.resolve(p, 0.5)).toBe(false);
     expect(p.x).toBe(10.5);
   });
+
+  it('reports a top the feet can stand on and a trunk being walked into', () => {
+    expect(collision.supportHeight(10, 5.2, 10)).toBe(5);
+    expect(collision.supportHeight(10, 1, 10)).toBeUndefined();
+    const climb = collision.climbTarget(10, 1, 8.2, 0.4, 0, 1);
+    expect(climb?.topY).toBe(5);
+    expect(collision.blocksSight({ x: 10, y: 2, z: 6 }, { x: 10, y: 2, z: 14 })).toBe(true);
+    expect(collision.blocksSight({ x: 10, y: 8, z: 6 }, { x: 10, y: 8, z: 14 })).toBe(false);
+  });
 });
 
 describe('generateCellPlacement', () => {

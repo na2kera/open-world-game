@@ -309,6 +309,15 @@
   clip-path: polygon(0 100%, 100% 0, 60% 80%);
 }
 
+.item-icon--bow::before {
+  inset: 8px 6px;
+  border-radius: 50%;
+  background: transparent;
+  border: 3px solid var(--item-color);
+  border-left-color: transparent;
+  transform: rotate(-40deg);
+}
+
 .item-icon--sword::before {
   inset: 2px 19px 10px;
   border-radius: 2px;

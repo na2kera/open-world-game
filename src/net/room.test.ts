@@ -39,4 +39,28 @@ describe('RoomHub', () => {
     const again = hub.join({ room: 'camp', seed: 8, name: 'ミラ' });
     expect(again?.seed).toBe(8);
   });
+
+  it('keeps the seed and events when the last player disconnects', () => {
+    const hub = new RoomHub();
+    const joined = hub.join({ room: 'camp', seed: 11, name: 'リン' });
+    expect(joined).not.toBeNull();
+    if (!joined) return;
+    hub.world('camp', { kind: 'tower', id: 'tower-a' });
+    expect(hub.disconnect('camp', joined.id)).toBe(true);
+    expect(hub.exportState('camp')).toEqual({
+      seed: 11,
+      events: [{ kind: 'tower', id: 'tower-a' }],
+    });
+    const next = hub.join({ room: 'camp', seed: 1, name: 'ソラ' });
+    expect(next?.seed).toBe(11);
+    expect(next?.events).toEqual([{ kind: 'tower', id: 'tower-a' }]);
+  });
+
+  it('restores a room from stored seed and events', () => {
+    const hub = new RoomHub();
+    hub.hydrate('kept', 4, [{ kind: 'chest', id: 'camp:chest' }]);
+    const restored = hub.join({ room: 'kept', seed: 99, name: 'ソラ' });
+    expect(restored?.seed).toBe(4);
+    expect(restored?.events).toEqual([{ kind: 'chest', id: 'camp:chest' }]);
+  });
 });

@@ -1,6 +1,7 @@
 export type ItemCategory = 'material' | 'food' | 'weapon' | 'key' | 'rune';
 
-export type ItemIconShape = 'leaf' | 'mushroom' | 'fruit' | 'crystal' | 'horn' | 'sword' | 'gear';
+export type ItemIconShape =
+  'leaf' | 'mushroom' | 'fruit' | 'crystal' | 'horn' | 'sword' | 'bow' | 'gear';
 
 interface ItemDefBase {
   readonly id: string;
@@ -29,6 +30,8 @@ export interface WeaponItemDef extends ItemDefBase {
   readonly category: 'weapon';
   readonly attack: number;
   readonly durability?: number;
+  /** Present when the weapon fires `arrowId` instead of swinging. */
+  readonly ranged?: { readonly arrowId: string; readonly speed: number };
 }
 
 export interface KeyItemDef extends ItemDefBase {
@@ -104,6 +107,35 @@ export const ITEM_DEFS = [
     icon: { color: '#db3e36', shape: 'fruit' },
   },
   {
+    id: 'toasted-mushroom',
+    name: '焼きキノコ',
+    description: '火を通して香りが立ったキノコ。',
+    category: 'food',
+    stackable: true,
+    maxStack: 99,
+    healQuarters: 2,
+    icon: { color: '#c46a3a', shape: 'mushroom' },
+  },
+  {
+    id: 'herb-soup',
+    name: '薬草の煮込み',
+    description: '薬草とキノコを煮た温かい皿。体力が大きく戻る。',
+    category: 'food',
+    stackable: true,
+    maxStack: 99,
+    healQuarters: 6,
+    icon: { color: '#6fbf73', shape: 'leaf' },
+  },
+  {
+    id: 'arrow',
+    name: '木の矢',
+    description: '弓に番ける木の矢。',
+    category: 'material',
+    stackable: true,
+    maxStack: 99,
+    icon: { color: '#d7c08a', shape: 'horn' },
+  },
+  {
     id: 'baked-apple',
     name: '焼きリンゴ',
     description: '火で焼いて甘みが増したリンゴ。',
@@ -156,6 +188,18 @@ export const ITEM_DEFS = [
     attack: 3,
     durability: 18,
     icon: { color: '#6d4126', shape: 'sword' },
+  },
+  {
+    id: 'traveler-bow',
+    name: '旅人の弓',
+    description: '木の矢を番ける軽い弓。狙いを定めて放つ。',
+    category: 'weapon',
+    stackable: false,
+    maxStack: 1,
+    attack: 3,
+    durability: 36,
+    ranged: { arrowId: 'arrow', speed: 32 },
+    icon: { color: '#c4a36a', shape: 'bow' },
   },
   {
     id: 'ancient-gear',

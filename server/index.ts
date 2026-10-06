@@ -2,14 +2,9 @@ import { createServer, type Server } from 'node:http';
 
 import { WebSocketServer, type WebSocket } from 'ws';
 
-import { parseServerMessage, type ServerMessage } from '../src/net/protocol';
-import {
-  RoomHub,
-  isWorldEvent,
-  normalizeName,
-  normalizeRoom,
-  type NetPlayer,
-} from '../src/net/room';
+import { parseClientMessage } from '../src/net/clientMessage';
+import type { ServerMessage } from '../src/net/protocol';
+import { RoomHub, normalizeRoom } from '../src/net/room';
 
 const DEFAULT_PORT = 8787;
 const STALE_MS = 4000;
@@ -126,42 +121,6 @@ function broadcast(
     if (!client || client.roomId !== roomId || socket === sender) continue;
     if (socket.readyState === socket.OPEN) socket.send(payload);
   }
-}
-
-function parseClientMessage(
-  raw: string,
-):
-  | { type: 'join'; room: string; seed: number; name: string }
-  | { type: 'snapshot'; player: NetPlayer }
-  | { type: 'world'; event: { kind: 'pickup' | 'chest' | 'enemy' | 'tower'; id: string } }
-  | null {
-  let value: unknown;
-  try {
-    value = JSON.parse(raw) as unknown;
-  } catch {
-    return null;
-  }
-  if (typeof value !== 'object' || value === null) return null;
-  const record = value as Record<string, unknown>;
-  if (record['type'] === 'join') {
-    if (!Number.isInteger(record['seed'])) return null;
-    return {
-      type: 'join',
-      room: typeof record['room'] === 'string' ? record['room'] : 'wildlands',
-      seed: record['seed'] as number,
-      name: normalizeName(typeof record['name'] === 'string' ? record['name'] : ''),
-    };
-  }
-  if (record['type'] === 'snapshot') {
-    const parsed = parseServerMessage(
-      JSON.stringify({ type: 'presence', player: record['player'] }),
-    );
-    return parsed?.type === 'presence' ? { type: 'snapshot', player: parsed.player } : null;
-  }
-  if (record['type'] === 'world' && isWorldEvent(record['event'])) {
-    return { type: 'world', event: record['event'] };
-  }
-  return null;
 }
 
 function closeServer(httpServer: Server, sockets: WebSocketServer): Promise<void> {

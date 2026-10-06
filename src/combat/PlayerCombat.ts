@@ -1,6 +1,6 @@
-import { Vector3 } from 'three';
+import { Mesh, MeshStandardMaterial, SphereGeometry, Vector3, type Object3D } from 'three';
 
-import { COMBAT_CONFIG } from '../config';
+import { COMBAT_CONFIG, PLAYER_CONFIG } from '../config';
 import type { EventBus } from '../core/EventBus';
 import type { GameEvents } from '../core/events';
 import type { System } from '../core/System';
@@ -12,7 +12,14 @@ import type { PlayerAvatar } from '../player/PlayerAvatar';
 import type { PlayerController } from '../player/PlayerController';
 import type { ThirdPersonCamera } from '../player/ThirdPersonCamera';
 import type { WorldLabelHandle, WorldLabelLayer } from '../ui/WorldLabelLayer';
-import { COMBO_STAGES, ComboInputBuffer, isPointInAttackArc } from './combatMath';
+import type { Terrain } from '../world/Terrain';
+import type { WorldCollision } from '../world/WorldCollision';
+import {
+  COMBO_STAGES,
+  ComboInputBuffer,
+  isPointInAttackArc,
+  isTerrainOccluded,
+} from './combatMath';
 
 export interface PlayerCombatDeps {
   readonly bus: EventBus<GameEvents>;
@@ -23,6 +30,9 @@ export interface PlayerCombatDeps {
   readonly inventory: Inventory;
   readonly getEnemies: () => readonly Enemy[];
   readonly labels: WorldLabelLayer;
+  readonly terrain: Terrain;
+  readonly collision: WorldCollision;
+  readonly parent: Object3D;
 }
 
 const tmpMarker = new Vector3();
@@ -37,6 +47,7 @@ export class PlayerCombat implements System {
   private didHit = false;
   private dodgeQueued = false;
   private lockTarget: Enemy | null = null;
+  private readonly arrows: Arrow[] = [];
 
   constructor(private readonly deps: PlayerCombatDeps) {
     this.unsubscribers.push(
@@ -73,6 +84,7 @@ export class PlayerCombat implements System {
   }
 
   update(dt: number): void {
+    this.updateArrows(dt);
     if (this.deps.player.isDead) {
       this.endAttack();
       this.releaseLockOn();
@@ -84,7 +96,9 @@ export class PlayerCombat implements System {
       this.dodgeQueued = false;
       this.performDodge();
     }
-    if (this.stage < 0 && this.attackBuffer.consume()) this.startStage(0);
+    if (this.stage < 0 && this.attackBuffer.consume()) {
+      if (!this.tryShoot()) this.startStage(0);
+    }
     if (this.stage < 0) return;
     const stage = COMBO_STAGES[this.stage];
     if (!stage) {
@@ -115,6 +129,8 @@ export class PlayerCombat implements System {
   dispose(): void {
     for (const unsubscribe of this.unsubscribers) unsubscribe();
     this.lockMarker.remove();
+    for (const arrow of this.arrows) arrow.dispose();
+    this.arrows.length = 0;
     this.releaseLockOn();
   }
 
@@ -189,7 +205,8 @@ export class PlayerCombat implements System {
       if (
         !this.lockTarget.active ||
         !this.lockTarget.isAlive ||
-        dx * dx + dz * dz > COMBAT_CONFIG.lockOnRange * COMBAT_CONFIG.lockOnRange
+        dx * dx + dz * dz > COMBAT_CONFIG.lockOnRange * COMBAT_CONFIG.lockOnRange ||
+        !this.canSee(this.lockTarget)
       ) {
         this.lockTarget = null;
       }
@@ -197,6 +214,7 @@ export class PlayerCombat implements System {
     if (!this.lockTarget) {
       let best = COMBAT_CONFIG.lockOnRange * COMBAT_CONFIG.lockOnRange;
       for (const enemy of this.deps.getEnemies()) {
+        if (!this.canSee(enemy)) continue;
         const dx = enemy.position.x - player.x;
         const dz = enemy.position.z - player.z;
         const distanceSq = dx * dx + dz * dz;
@@ -215,9 +233,121 @@ export class PlayerCombat implements System {
     }
   }
 
+  private canSee(enemy: Enemy): boolean {
+    const from = {
+      x: this.deps.player.position.x,
+      y: this.deps.player.position.y + PLAYER_CONFIG.chestHeight,
+      z: this.deps.player.position.z,
+    };
+    const to = { x: enemy.position.x, y: enemy.position.y + 1.1, z: enemy.position.z };
+    if (isTerrainOccluded((x, z) => this.deps.terrain.heightAt(x, z), from, to)) return false;
+    return !this.deps.collision.blocksSight(from, to);
+  }
+
+  /** Fires an arrow when the equipped weapon is a bow. Returns true for any ranged weapon. */
+  private tryShoot(): boolean {
+    const equippedId = this.deps.inventory.equippedWeaponId;
+    const equipped = equippedId ? getItemDef(equippedId) : undefined;
+    if (equipped?.category !== 'weapon' || !equipped.ranged) return false;
+    const arrowId = equipped.ranged.arrowId;
+    if (!this.deps.inventory.consume(arrowId)) return true;
+    const speed = equipped.ranged.speed;
+    const direction = this.aimDirection();
+    const origin = this.deps.player.position;
+    this.arrows.push(
+      new Arrow(
+        this.deps.parent,
+        origin.x + direction.x * 0.6,
+        origin.y + PLAYER_CONFIG.chestHeight + direction.y * 0.4,
+        origin.z + direction.z * 0.6,
+        direction.x * speed,
+        direction.y * speed,
+        direction.z * speed,
+        Math.max(1, equipped.attack),
+      ),
+    );
+    this.deps.inventory.damageEquippedWeapon();
+    return true;
+  }
+
+  private aimDirection(): Vector3 {
+    const locked = this.lockTarget;
+    if (locked) {
+      const origin = this.deps.player.position;
+      const direction = new Vector3(
+        locked.position.x - origin.x,
+        locked.position.y + 1.1 - (origin.y + PLAYER_CONFIG.chestHeight),
+        locked.position.z - origin.z,
+      );
+      if (direction.lengthSq() > 0) return direction.normalize();
+    }
+    const { yaw, pitch } = this.deps.camera;
+    const cosPitch = Math.cos(pitch);
+    return new Vector3(-Math.sin(yaw) * cosPitch, -Math.sin(pitch), -Math.cos(yaw) * cosPitch);
+  }
+
+  private updateArrows(dt: number): void {
+    for (let index = this.arrows.length - 1; index >= 0; index--) {
+      const arrow = this.arrows[index];
+      if (!arrow) continue;
+      const done = arrow.advance(dt, this.deps.terrain, this.deps.getEnemies());
+      if (!done) continue;
+      arrow.dispose();
+      this.arrows.splice(index, 1);
+    }
+  }
+
   private releaseLockOn(): void {
     this.lockTarget = null;
     this.deps.camera.setLookTarget(null);
     this.deps.player.setCombatFacing(null);
+  }
+}
+
+const ARROW_GEOMETRY = new SphereGeometry(0.08, 6, 4);
+const ARROW_MATERIAL = new MeshStandardMaterial({ color: 0xd7c08a, roughness: 0.6 });
+const ARROW_GRAVITY = 12;
+
+class Arrow {
+  private readonly mesh = new Mesh(ARROW_GEOMETRY, ARROW_MATERIAL);
+  private readonly velocity = new Vector3();
+  private life = 1.8;
+
+  constructor(
+    parent: Object3D,
+    x: number,
+    y: number,
+    z: number,
+    vx: number,
+    vy: number,
+    vz: number,
+    private readonly damageAmount: number,
+  ) {
+    this.mesh.position.set(x, y, z);
+    this.mesh.castShadow = true;
+    this.velocity.set(vx, vy, vz);
+    parent.add(this.mesh);
+  }
+
+  advance(dt: number, terrain: Terrain, enemies: readonly Enemy[]): boolean {
+    this.life -= dt;
+    this.velocity.y -= ARROW_GRAVITY * dt;
+    this.mesh.position.addScaledVector(this.velocity, dt);
+    const point = this.mesh.position;
+    if (this.life <= 0 || point.y <= terrain.heightAt(point.x, point.z)) return true;
+    for (const enemy of enemies) {
+      if (!enemy.isAlive) continue;
+      const dx = enemy.position.x - point.x;
+      const dy = enemy.position.y + 1 - point.y;
+      const dz = enemy.position.z - point.z;
+      if (dx * dx + dy * dy + dz * dz > 0.64) continue;
+      enemy.damage(this.damageAmount, point);
+      return true;
+    }
+    return false;
+  }
+
+  dispose(): void {
+    this.mesh.removeFromParent();
   }
 }

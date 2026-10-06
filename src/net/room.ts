@@ -121,6 +121,27 @@ export class RoomHub {
     if (room.players.size === 0) this.rooms.delete(id);
     return true;
   }
+
+  /** Drops a player but keeps the room, its seed and its world events. */
+  disconnect(roomId: string, playerId: string): boolean {
+    const room = this.rooms.get(normalizeRoom(roomId));
+    return room?.players.delete(playerId) ?? false;
+  }
+
+  /** Recreates an empty room from durable storage before anyone joins. */
+  hydrate(roomId: string, seed: number, events: readonly WorldEvent[]): void {
+    const id = normalizeRoom(roomId);
+    if (this.rooms.has(id) || !Number.isInteger(seed)) return;
+    const room: RoomState = { seed, players: new Map(), events: [], eventKeys: new Set() };
+    this.rooms.set(id, room);
+    for (const event of events) this.world(id, event);
+  }
+
+  exportState(roomId: string): { seed: number; events: WorldEvent[] } | null {
+    const room = this.rooms.get(normalizeRoom(roomId));
+    if (!room) return null;
+    return { seed: room.seed, events: [...room.events] };
+  }
 }
 
 export function normalizeRoom(room: string): string {

@@ -21,6 +21,20 @@ function readSeed(params: URLSearchParams): number | undefined {
   return Number.isFinite(parsed) ? parsed : DEFAULT_SEED;
 }
 
+function multiplayerUrl(room: string): string {
+  const override = params.get('mp');
+  if (override) return withRoom(override, room);
+  const configured = import.meta.env.VITE_MULTIPLAYER_URL;
+  if (typeof configured === 'string' && configured.length > 0) return withRoom(configured, room);
+  return `ws://${window.location.hostname || 'localhost'}:8787`;
+}
+
+function withRoom(base: string, room: string): string {
+  const url = new URL(base, window.location.href);
+  url.searchParams.set('room', room);
+  return url.toString();
+}
+
 function readSavedSeed(): number | undefined {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
@@ -42,11 +56,12 @@ async function boot(): Promise<void> {
   const root = document.querySelector<HTMLDivElement>('#app');
   if (!root) throw new Error('#app not found');
   const offline = params.has('offline');
+  const room = params.get('room') ?? 'wildlands';
   const connection = offline
     ? null
     : await joinMultiplayer({
-        url: `ws://${window.location.hostname || 'localhost'}:8787`,
-        room: params.get('room') ?? 'wildlands',
+        url: multiplayerUrl(room),
+        room,
         seed: requestedSeed ?? readSavedSeed() ?? DEFAULT_SEED,
         name: params.get('name') ?? '旅人',
       });
