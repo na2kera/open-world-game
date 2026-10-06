@@ -15,10 +15,17 @@ const MIN_SEPARATION = 1e-6;
 
 /** Pushes moving cylinders (the player) out of static cylinder obstacles. */
 export class WorldCollision {
+  private readonly extras: Collider[] = [];
+
   constructor(
     private readonly provider: ColliderProvider,
     private readonly cellSize: number = VEGETATION_CELL_SIZE,
   ) {}
+
+  /** Permanent obstacles such as village huts and tower columns. */
+  addCollider(collider: Collider): void {
+    this.extras.push(collider);
+  }
 
   /**
    * Moves `position` (feet) horizontally out of any overlapping collider.
@@ -35,25 +42,32 @@ export class WorldCollision {
       for (let cz = minCz; cz <= maxCz; cz++) {
         for (let cx = minCx; cx <= maxCx; cx++) {
           for (const c of this.provider.getColliders(cx, cz)) {
-            if (position.y >= c.topY || position.y < c.baseY - radius) continue;
-            const dx = position.x - c.x;
-            const dz = position.z - c.z;
-            const minDist = radius + c.radius;
-            const distSq = dx * dx + dz * dz;
-            if (distSq >= minDist * minDist) continue;
-            const dist = Math.sqrt(distSq);
-            if (dist < MIN_SEPARATION) {
-              position.x = c.x + minDist;
-            } else {
-              const push = (minDist - dist) / dist;
-              position.x += dx * push;
-              position.z += dz * push;
-            }
-            hit = true;
+            if (this.pushOut(position, radius, c)) hit = true;
           }
         }
       }
+      for (const c of this.extras) {
+        if (this.pushOut(position, radius, c)) hit = true;
+      }
     }
     return hit;
+  }
+
+  private pushOut(position: Vec3Like, radius: number, c: Collider): boolean {
+    if (position.y >= c.topY || position.y < c.baseY - radius) return false;
+    const dx = position.x - c.x;
+    const dz = position.z - c.z;
+    const minDist = radius + c.radius;
+    const distSq = dx * dx + dz * dz;
+    if (distSq >= minDist * minDist) return false;
+    const dist = Math.sqrt(distSq);
+    if (dist < MIN_SEPARATION) {
+      position.x = c.x + minDist;
+    } else {
+      const push = (minDist - dist) / dist;
+      position.x += dx * push;
+      position.z += dz * push;
+    }
+    return true;
   }
 }

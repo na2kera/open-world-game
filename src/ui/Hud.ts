@@ -58,11 +58,18 @@ export class Hud implements System {
   private readonly weapon = document.createElement('div');
   private readonly damageVignette = document.createElement('div');
   private readonly saveIcon = document.createElement('div');
+  private readonly objective = document.createElement('div');
+  private readonly banner = document.createElement('div');
+  private readonly boss = document.createElement('div');
+  private readonly bossName = document.createElement('div');
+  private readonly bossFill = document.createElement('span');
   private readonly unsubscribers: (() => void)[] = [];
   private readonly toastQueue: string[] = [];
   private interaction: Interactable | null = null;
   private combatActive = false;
   private toastTimer = 0;
+  private bannerTimer = 0;
+  private readonly bannerQueue: string[] = [];
   private damageTimer = 0;
   private saveTimer = 0;
   private shownWeapon = '';
@@ -93,10 +100,23 @@ export class Hud implements System {
     this.saveIcon.className = 'hud-save-icon hud-panel';
     this.saveIcon.textContent = '◇ セーブ中';
     this.saveIcon.hidden = true;
+    this.objective.className = 'hud-objective hud-panel';
+    this.objective.hidden = true;
+    this.banner.className = 'hud-banner';
+    this.banner.hidden = true;
+    this.boss.className = 'hud-boss';
+    this.boss.hidden = true;
+    this.bossName.className = 'hud-boss-name';
+    const bossTrack = document.createElement('div');
+    bossTrack.className = 'hud-boss-track';
+    this.bossFill.className = 'hud-boss-fill';
+    bossTrack.appendChild(this.bossFill);
+    this.boss.append(this.bossName, bossTrack);
 
     this.root.append(
       this.hearts.element,
       this.stamina.element,
+      this.objective,
       corner,
       this.debugLine,
       this.interactionPrompt,
@@ -104,6 +124,8 @@ export class Hud implements System {
       this.weapon,
       this.damageVignette,
       this.saveIcon,
+      this.banner,
+      this.boss,
     );
     deps.container.appendChild(this.root);
     this.unsubscribers.push(
@@ -174,6 +196,28 @@ export class Hud implements System {
     this.minimap.removeMarker(id);
   }
 
+  setObjective(text: string): void {
+    this.objective.hidden = text.length === 0;
+    this.objective.textContent = text;
+  }
+
+  showBanner(text: string): void {
+    this.bannerQueue.push(text);
+    if (this.banner.hidden) this.showNextBanner();
+  }
+
+  setBoss(name: string | null, hp: number, maxHp: number): void {
+    this.boss.hidden = name === null;
+    if (!name) return;
+    this.bossName.textContent = name;
+    const ratio = maxHp <= 0 ? 0 : Math.max(0, Math.min(1, hp / maxHp));
+    this.bossFill.style.transform = `scaleX(${ratio})`;
+  }
+
+  setMapReveals(circles: readonly { x: number; z: number; radius: number }[]): void {
+    this.minimap.setReveals(circles);
+  }
+
   enqueueToast(message: string): void {
     this.toastQueue.push(message);
     if (this.toast.hidden) this.showNextToast();
@@ -241,6 +285,21 @@ export class Hud implements System {
     this.damageVignette.classList.toggle('is-visible', this.damageTimer > 0);
     this.saveTimer = Math.max(0, this.saveTimer - frameDt);
     this.saveIcon.hidden = this.saveTimer <= 0;
+    if (!this.banner.hidden) {
+      this.bannerTimer -= frameDt;
+      if (this.bannerTimer <= 0) {
+        this.banner.hidden = true;
+        this.showNextBanner();
+      }
+    }
+  }
+
+  private showNextBanner(): void {
+    const message = this.bannerQueue.shift();
+    if (!message) return;
+    this.banner.textContent = message;
+    this.bannerTimer = 2.4;
+    this.banner.hidden = false;
   }
 
   private showNextToast(): void {

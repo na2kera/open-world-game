@@ -6,6 +6,7 @@ import type { GameEvents, PositionPayload } from '../core/events';
 import type { System } from '../core/System';
 import type { InputState } from '../input/types';
 import { damp, dampAngle, lerpAngle, clamp } from '../utils/math';
+import type { Platforms } from '../world/Platforms';
 import type { Terrain, Vec3Like } from '../world/Terrain';
 import type { WorldCollision } from '../world/WorldCollision';
 import { Stamina } from './Stamina';
@@ -20,6 +21,8 @@ export interface PlayerControllerDeps {
   /** Current camera yaw (radians); movement is camera-relative. */
   getCameraYaw: () => number;
   spawnPoint: Readonly<Vec3Like>;
+  /** Optional stairs and landings above the height field. */
+  platforms?: Platforms;
 }
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -126,7 +129,7 @@ export class PlayerController implements System {
 
   /** Teleports the player onto the ground at (x, z) and resets motion. */
   placeAt(point: Readonly<Vec3Like>): void {
-    const y = Math.max(this.deps.terrain.heightAt(point.x, point.z), point.y);
+    const y = Math.max(this.surfaceY(point.x, point.y + 0.2, point.z), point.y);
     this.position.set(point.x, y, point.z);
     this.previousPosition.copy(this.position);
     this.velocity.set(0, 0, 0);
@@ -268,12 +271,16 @@ export class PlayerController implements System {
   private stepGround(dt: number): void {
     const terrain = this.deps.terrain;
     const p = this.position;
-    const groundY = terrain.heightAt(p.x, p.z);
+    const groundY = this.surfaceY(p.x, p.y, p.z);
     if (groundY < WATER_LEVEL - PLAYER_CONFIG.swimDepth) {
       this.setState('swim');
       return;
     }
-    terrain.normalAt(p.x, p.z, this.surfaceNormal);
+    if (this.onPlatform(p.x, p.y, p.z)) {
+      this.surfaceNormal.set(0, 1, 0);
+    } else {
+      terrain.normalAt(p.x, p.z, this.surfaceNormal);
+    }
     if (this.surfaceNormal.y < COS_MAX_WALK_SLOPE) {
       this.setState(this.wantsToClimb() ? 'climb' : 'slide');
       return;
@@ -305,7 +312,7 @@ export class PlayerController implements System {
     }
 
     this.moveHorizontal(dt);
-    const newGround = terrain.heightAt(p.x, p.z);
+    const newGround = this.surfaceY(p.x, p.y, p.z);
     if (p.y - newGround > PLAYER_CONFIG.groundSnapDistance) {
       this.coyoteTimer = PLAYER_CONFIG.coyoteTime;
       this.fallStartY = p.y;
@@ -320,7 +327,6 @@ export class PlayerController implements System {
 
   private stepAir(dt: number): void {
     const p = this.position;
-    const terrain = this.deps.terrain;
     this.coyoteTimer = Math.max(0, this.coyoteTimer - dt);
     if (this.coyoteTimer > 0 && this.jumpBufferTimer > 0) {
       this.jump();
@@ -346,7 +352,7 @@ export class PlayerController implements System {
     p.y += this.velocity.y * dt;
     this.fallStartY = Math.max(this.fallStartY, p.y);
 
-    const groundY = terrain.heightAt(p.x, p.z);
+    const groundY = this.surfaceY(p.x, p.y, p.z);
     const deepWater = groundY < WATER_LEVEL - PLAYER_CONFIG.swimDepth;
     if (deepWater && p.y <= WATER_LEVEL - PLAYER_CONFIG.swimFloatDepth) {
       this.fallStartY = p.y;
@@ -456,7 +462,6 @@ export class PlayerController implements System {
   }
 
   private stepSwim(dt: number): void {
-    const terrain = this.deps.terrain;
     const p = this.position;
     const target = WATER_LEVEL - PLAYER_CONFIG.swimFloatDepth;
     p.y = damp(p.y, target, SWIM_FLOAT_LAMBDA, dt);
@@ -472,7 +477,7 @@ export class PlayerController implements System {
     this.moveHorizontal(dt);
     this.drain = STAMINA_CONFIG.swimDrain;
 
-    const groundY = terrain.heightAt(p.x, p.z);
+    const groundY = this.surfaceY(p.x, p.y, p.z);
     if (groundY > WATER_LEVEL - PLAYER_CONFIG.swimDepth) {
       p.y = Math.max(p.y, groundY);
       this.setState('ground');
@@ -537,6 +542,18 @@ export class PlayerController implements System {
     const terrain = this.deps.terrain;
     this.position.x = terrain.clampToWorld(this.position.x, PLAYER_CONFIG.worldEdgeMargin);
     this.position.z = terrain.clampToWorld(this.position.z, PLAYER_CONFIG.worldEdgeMargin);
+  }
+
+  /** Terrain height, or a stair landing when the feet are close enough to step up. */
+  private surfaceY(x: number, feetY: number, z: number): number {
+    const terrainY = this.deps.terrain.heightAt(x, z);
+    const platformY = this.deps.platforms?.heightAt(x, feetY, z);
+    return platformY === undefined ? terrainY : Math.max(terrainY, platformY);
+  }
+
+  private onPlatform(x: number, feetY: number, z: number): boolean {
+    const platformY = this.deps.platforms?.heightAt(x, feetY, z);
+    return platformY !== undefined && platformY > this.deps.terrain.heightAt(x, z) + 0.2;
   }
 
   private updateSafeGround(dt: number, groundY: number): void {

@@ -20,16 +20,25 @@ export interface ClearedCampSaveData {
   readonly clearedAtDay: number;
 }
 
-/** Reserved typed quest section for Phase 2b. */
+export interface QuestProgressSave {
+  readonly id: string;
+  readonly counts: readonly number[];
+}
+
+/** Quest section. Older saves may only contain the reserved id lists. */
 export interface QuestSaveData {
   readonly active?: readonly string[];
   readonly completed?: readonly string[];
+  readonly started?: readonly QuestProgressSave[];
+  readonly trackedId?: string;
 }
 
-/** Reserved typed story section for Phase 2b. */
+/** Story section. Added fields stay optional so existing saves still load. */
 export interface StorySaveData {
   readonly chapterId?: string;
   readonly flags?: readonly string[];
+  readonly towers?: readonly string[];
+  readonly respawn?: SavedPosition;
 }
 
 export interface SaveData {
@@ -105,14 +114,31 @@ export function isSaveData(value: unknown): value is SaveData {
 
 function isQuestData(value: unknown): value is QuestSaveData {
   if (!isRecord(value)) return false;
-  return optionalStringArray(value['active']) && optionalStringArray(value['completed']);
+  if (!optionalStringArray(value['active']) || !optionalStringArray(value['completed'])) {
+    return false;
+  }
+  if (value['trackedId'] !== undefined && typeof value['trackedId'] !== 'string') return false;
+  const started = value['started'];
+  if (started === undefined) return true;
+  return (
+    Array.isArray(started) &&
+    started.every(
+      (entry) =>
+        isRecord(entry) &&
+        typeof entry['id'] === 'string' &&
+        Array.isArray(entry['counts']) &&
+        entry['counts'].every((count) => typeof count === 'number' && count >= 0),
+    )
+  );
 }
 
 function isStoryData(value: unknown): value is StorySaveData {
   if (!isRecord(value)) return false;
   return (
     (value['chapterId'] === undefined || typeof value['chapterId'] === 'string') &&
-    optionalStringArray(value['flags'])
+    optionalStringArray(value['flags']) &&
+    optionalStringArray(value['towers']) &&
+    (value['respawn'] === undefined || isPosition(value['respawn']))
   );
 }
 

@@ -8,6 +8,8 @@ import {
   FIXED_TIMESTEP,
   MAX_FRAME_DT,
   MAX_PIXEL_RATIO,
+  PLAYER_CONFIG,
+  STAMINA_CONFIG,
   START_TIME_OF_DAY,
 } from '../config';
 import { PlayerCombat } from '../combat/PlayerCombat';
@@ -24,12 +26,16 @@ import { ThirdPersonCamera } from '../player/ThirdPersonCamera';
 import type { SaveData } from '../save/SaveData';
 import { SaveManager } from '../save/SaveManager';
 import { SaveSystem } from '../save/SaveSystem';
+import { GameplayFlow } from '../story/GameplayFlow';
+import { DialogBox } from '../ui/DialogBox';
 import { GameOverScreen } from '../ui/GameOverScreen';
 import { Hud } from '../ui/Hud';
 import { InventoryMenu } from '../ui/InventoryMenu';
 import { PauseMenu } from '../ui/PauseMenu';
 import { TitleScreen } from '../ui/TitleScreen';
 import { WorldLabelLayer } from '../ui/WorldLabelLayer';
+import { Landmarks } from '../world/SiteMeshes';
+import { Platforms } from '../world/Platforms';
 import { World } from '../world/World';
 import { EventBus } from './EventBus';
 import type { GameEvents } from './events';
@@ -74,6 +80,10 @@ export class Game {
   readonly saveManager: SaveManager;
   readonly saves: SaveSystem;
   readonly hud: Hud;
+  readonly platforms: Platforms;
+  readonly landmarks: Landmarks;
+  readonly dialog: DialogBox;
+  readonly flow: GameplayFlow;
   /** Live position that world streaming and shadows follow (interpolated player position). */
   readonly focus = new THREE.Vector3();
 
@@ -127,6 +137,7 @@ export class Game {
       bus: this.bus,
       getCameraYaw: () => this.cameraRig.yaw,
       spawnPoint: this.world.spawnPoint,
+      platforms: (this.platforms = new Platforms()),
     });
     this.cameraRig = new ThirdPersonCamera(
       this.camera,
@@ -189,6 +200,29 @@ export class Game {
       createData: () => this.createSaveData(),
       applyData: (data) => this.applySaveData(data),
     });
+    this.landmarks = new Landmarks(
+      this.scene,
+      this.world.terrain,
+      this.platforms,
+      this.world.collision,
+    );
+    this.dialog = new DialogBox(container, this.state, this.input);
+    this.flow = new GameplayFlow({
+      bus: this.bus,
+      state: this.state,
+      player: this.player,
+      inventory: this.inventory,
+      terrain: this.world.terrain,
+      enemyGroup: this.enemies.group,
+      labels: this.labels,
+      interactions: this.interactions,
+      hud: this.hud,
+      landmarks: this.landmarks,
+      spawn: this.world.spawnPoint,
+      dialog: this.dialog,
+      save: () => this.saves.save('auto'),
+      resetCamera: () => this.cameraRig.resetBehindPlayer(),
+    });
 
     // Fixed simulation: player input first, then combat/enemies and finally time/autosave.
     this.addSystem(this.player);
@@ -204,6 +238,8 @@ export class Game {
     this.addSystem(this.avatar);
     this.addSystem(this.itemSpawner);
     this.addSystem(this.interactions);
+    this.addSystem(this.dialog);
+    this.addSystem(this.flow);
     this.addSystem(this.labels);
     this.addSystem({
       frameUpdate: () => {
@@ -236,6 +272,11 @@ export class Game {
           this.saves.load();
         },
         () => this.returnToTitle(),
+        {
+          questLines: () => this.flow.journalLines(),
+          travelPoints: () => this.flow.travelPoints(),
+          travel: (id) => this.flow.travel(id),
+        },
       ),
     );
     this.addSystem(
@@ -245,7 +286,7 @@ export class Game {
         this.state,
         this.player,
         this.world.spawnPoint,
-        () => this.saves.lastSavePoint,
+        () => this.flow.story.respawn ?? this.saves.lastSavePoint,
       ),
     );
     this.addSystem(
@@ -341,8 +382,8 @@ export class Game {
       collectedItemIds: [...this.itemSpawner.collectedItemIds],
       openedChestIds: [...this.itemSpawner.openedChestIds],
       clearedCamps: this.enemies.campProgress,
-      quests: {},
-      story: {},
+      quests: this.flow.quests.toJSON(),
+      story: this.flow.story.toJSON(),
     };
   }
 
@@ -356,6 +397,9 @@ export class Game {
     this.enemies.restoreProgress(data.clearedCamps);
     this.player.placeAt(data.player.position);
     this.player.restoreVitals(data.player.hp, data.player.maxHp, data.player.maxStamina);
+    this.flow.story.restore(data.story);
+    this.flow.quests.restore(data.quests);
+    this.flow.onRestored();
     this.cameraRig.resetBehindPlayer();
   }
 
@@ -364,13 +408,20 @@ export class Game {
     this.saves.resetSavePoint();
     this.inventory.clear();
     this.inventory.add('wooden-stick');
-    this.inventory.add('apple', 3);
+    this.inventory.add('apple', 1);
     this.inventory.equipWeapon('wooden-stick');
     this.itemSpawner.reset();
     this.enemies.reset();
     this.world.dayNight.setTimeOfDay(START_TIME_OF_DAY, 0);
+    this.player.restoreVitals(
+      PLAYER_CONFIG.maxHpQuarters,
+      PLAYER_CONFIG.maxHpQuarters,
+      STAMINA_CONFIG.max,
+    );
     this.player.reviveAt(this.world.spawnPoint);
+    this.cameraRig.resetBehindPlayer();
     this.state.set('playing');
+    this.flow.onNewGame();
   }
 
   private continueGame(): void {
@@ -409,6 +460,10 @@ export class Game {
         color: '#f1cc64',
         shape: 'chest',
       });
+    }
+    for (const marker of this.flow.markers()) {
+      next.add(marker.id);
+      this.hud.upsertMinimapMarker(marker);
     }
     for (const id of this.minimapMarkerIds) {
       if (!next.has(id)) this.hud.removeMinimapMarker(id);

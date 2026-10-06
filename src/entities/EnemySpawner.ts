@@ -12,6 +12,7 @@ import {
   ENEMY_ACTIVE_DISTANCE,
   ENEMY_CAMP_CELL_SIZE,
   STREAMING_REFRESH_DISTANCE,
+  VILLAGE_SAFE_RADIUS,
   WATER_LEVEL,
 } from '../config';
 import type { EventBus } from '../core/EventBus';
@@ -55,6 +56,8 @@ export class EnemySpawner implements System {
   private readonly cleared = new Map<string, number>();
   private readonly spawnCellX: number;
   private readonly spawnCellZ: number;
+  private readonly spawnX: number;
+  private readonly spawnZ: number;
   private readonly lastRefresh = { x: Number.POSITIVE_INFINITY, z: Number.POSITIVE_INFINITY };
   private nightEnemy: Enemy | null = null;
   private nightSerial = 0;
@@ -74,6 +77,8 @@ export class EnemySpawner implements System {
     scene.add(this.group);
     this.spawnCellX = toCell(focus.x, ENEMY_CAMP_CELL_SIZE);
     this.spawnCellZ = toCell(focus.z, ENEMY_CAMP_CELL_SIZE);
+    this.spawnX = focus.x;
+    this.spawnZ = focus.z;
   }
 
   get targetableEnemies(): readonly Enemy[] {
@@ -189,6 +194,7 @@ export class EnemySpawner implements System {
     if (!forced && rng() >= CAMP_CHANCE) return null;
     const x = forced ? this.focus.x + 22 : (cx + 0.25 + rng() * 0.5) * ENEMY_CAMP_CELL_SIZE;
     const z = forced ? this.focus.z + 10 : (cz + 0.25 + rng() * 0.5) * ENEMY_CAMP_CELL_SIZE;
+    if (Math.hypot(x - this.spawnX, z - this.spawnZ) < VILLAGE_SAFE_RADIUS) return null;
     const y = this.terrain.heightAt(x, z);
     const biome = this.terrain.biomeAt(x, z);
     if (
@@ -293,6 +299,9 @@ export class EnemySpawner implements System {
       return;
     }
     if (this.nightEnemy?.isAlive) return;
+    if (Math.hypot(this.focus.x - this.spawnX, this.focus.z - this.spawnZ) < VILLAGE_SAFE_RADIUS) {
+      return;
+    }
     const def = getEnemyDef('night-wisp');
     if (!def) return;
     const angle = hashInts(this.seed, this.dayNight.elapsedDays, this.nightSerial) / 4294967296;

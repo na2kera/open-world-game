@@ -26,6 +26,7 @@ export class TitleScreen implements System {
   private readonly confirm = document.createElement('div');
   private readonly navigator = new MenuNavigator();
   private actions: readonly TitleAction[] = [];
+  private readonly logoTitle: HTMLHeadingElement;
   private orbitTime = 0;
   private inHelp = false;
   private confirmingNewGame = false;
@@ -46,6 +47,7 @@ export class TitleScreen implements System {
     logo.className = 'title-logo';
     const title = document.createElement('h1');
     title.textContent = 'Wildlands';
+    this.logoTitle = title;
     const subtitle = document.createElement('p');
     subtitle.textContent = '― 広大な大地を、自由に。';
     logo.append(title, subtitle);
@@ -71,6 +73,7 @@ export class TitleScreen implements System {
     if (!this.wasVisible) {
       this.wasVisible = true;
       this.rebuildActions();
+      this.refreshLogo();
       this.navigator.resetEdges();
     }
     this.orbitTime += frameDt;
@@ -129,6 +132,12 @@ export class TitleScreen implements System {
       }),
     );
     this.renderSelection();
+  }
+
+  private refreshLogo(): void {
+    const flags = this.saves.load()?.story.flags;
+    const cleared = flags?.includes('ending') ?? false;
+    this.logoTitle.textContent = cleared ? 'Wildlands ★' : 'Wildlands';
   }
 
   private renderSelection(): void {
@@ -193,13 +202,13 @@ export function controlsHelpMarkup(): string {
         <p>左スティック: 移動</p><p>右スティック: カメラ</p>
         <p>Y: 攻撃</p><p>X: ジャンプ</p><p>A: 調べる</p>
         <p>B: 回避 / 長押しでダッシュ</p><p>ZL: 注目</p>
-        <p>−: 所持品</p><p>＋: ポーズ</p>
+        <p>−: 所持品</p><p>＋: ポーズ（手帳・マップ）</p>
       </section>
       <section><h3>キーボード / マウス</h3>
         <p>WASD: 移動</p><p>マウス: カメラ</p>
         <p>左クリック: 攻撃</p><p>Space: ジャンプ</p><p>E: 調べる</p>
         <p>Ctrl: 回避 / Shift: ダッシュ</p><p>右クリック: 注目</p>
-        <p>Tab / I: 所持品</p><p>Esc: ポーズ</p>
+        <p>Tab / I: 所持品</p><p>Esc: ポーズ（手帳・マップ）</p>
       </section>
     </div>
     <p class="menu-hints">A / Enter 決定 / B / Backspace 戻る</p>`;

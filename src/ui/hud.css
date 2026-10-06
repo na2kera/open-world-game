@@ -304,3 +304,140 @@
     opacity: 0.6;
   }
 }
+
+.hud-objective {
+  position: absolute;
+  top: 78px;
+  left: 24px;
+  max-width: min(420px, 46vw);
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.hud-banner {
+  position: absolute;
+  top: 22%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 28px;
+  background: rgba(10, 16, 22, 0.72);
+  border-top: 1px solid rgba(255, 255, 255, 0.35);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.35);
+  font-size: 26px;
+  letter-spacing: 0.08em;
+}
+
+.hud-boss {
+  position: absolute;
+  left: 50%;
+  bottom: 36px;
+  width: min(460px, 72vw);
+  transform: translateX(-50%);
+}
+
+.hud-boss-name {
+  margin-bottom: 6px;
+  text-align: center;
+  letter-spacing: 0.14em;
+}
+
+.hud-boss-track {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.hud-boss-fill {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  background: #c4473a;
+}
+
+.dialog-box {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  z-index: 30;
+  width: min(760px, 94vw);
+  transform: translateX(-50%);
+  padding: 16px 22px 14px;
+  box-sizing: border-box;
+  color: #f6f1df;
+  background: rgba(12, 18, 24, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 16px;
+  pointer-events: auto;
+}
+
+.dialog-box[hidden] {
+  display: none !important;
+}
+
+.dialog-speaker {
+  margin-bottom: 6px;
+  color: #f2d276;
+  font-size: 14px;
+}
+
+.dialog-body {
+  min-height: 3.2em;
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+.dialog-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.dialog-choice {
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+
+.dialog-choice.is-selected {
+  background: rgba(242, 210, 118, 0.16);
+}
+
+.dialog-hint {
+  margin-top: 8px;
+  color: rgba(246, 241, 223, 0.7);
+  font-size: 12px;
+}
+
+.npc-label {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(10, 16, 22, 0.72);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.pause-journal {
+  max-width: 640px;
+  line-height: 1.7;
+}
+
+.pause-journal button {
+  display: block;
+  width: min(360px, 100%);
+  margin: 8px 0;
+  padding: 10px 14px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font: inherit;
+}
+
+.pause-journal button.is-selected {
+  border-color: rgba(242, 210, 118, 0.7);
+  background: rgba(242, 210, 118, 0.12);
+}

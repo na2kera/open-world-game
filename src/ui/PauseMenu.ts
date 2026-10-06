@@ -11,6 +11,12 @@ interface PauseAction {
   readonly run: () => void;
 }
 
+export interface PauseJournal {
+  questLines(): readonly string[];
+  travelPoints(): readonly { id: string; label: string }[];
+  travel(id: string): void;
+}
+
 /** Pause options with manual save/load and confirmation subviews. */
 export class PauseMenu implements System {
   readonly element = document.createElement('div');
@@ -20,8 +26,11 @@ export class PauseMenu implements System {
   private readonly hints = document.createElement('div');
   private readonly navigator = new MenuNavigator();
   private actions: readonly PauseAction[] = [];
+  private readonly journalView = document.createElement('div');
   private shown = false;
   private inHelp = false;
+  private journalMode: 'quests' | 'map' | null = null;
+  private travelPoints: readonly { id: string; label: string }[] = [];
   private pendingConfirm: (() => void) | null = null;
 
   constructor(
@@ -32,6 +41,7 @@ export class PauseMenu implements System {
     private readonly saveGame: () => void,
     private readonly loadGame: () => void,
     private readonly returnToTitle: () => void,
+    private readonly journal: PauseJournal,
   ) {
     this.element.className = 'game-menu pause-menu';
     this.element.hidden = true;
@@ -40,10 +50,12 @@ export class PauseMenu implements System {
     this.menu.className = 'pause-options';
     this.help.className = 'controls-help';
     this.help.hidden = true;
+    this.journalView.className = 'pause-journal';
+    this.journalView.hidden = true;
     this.confirm.className = 'menu-confirm';
     this.confirm.hidden = true;
     this.hints.className = 'menu-hints';
-    this.element.append(title, this.menu, this.help, this.confirm, this.hints);
+    this.element.append(title, this.menu, this.help, this.journalView, this.confirm, this.hints);
     container.appendChild(this.element);
   }
 
@@ -62,6 +74,10 @@ export class PauseMenu implements System {
     const result = this.navigator.update(frameDt, readMenuInput(this.input.state));
     if (this.inHelp) {
       if (result.cancelled || result.confirmed) this.closeHelp();
+      return;
+    }
+    if (this.journalMode) {
+      this.updateJournal(result.moved, result.confirmed, result.cancelled);
       return;
     }
     if (this.pendingConfirm) {
@@ -101,6 +117,8 @@ export class PauseMenu implements System {
       });
     }
     actions.push(
+      { label: '冒険手帳', run: () => this.openJournal('quests') },
+      { label: 'マップ', run: () => this.openJournal('map') },
       { label: '操作説明', run: () => this.openHelp() },
       {
         label: 'タイトルへ',
@@ -133,6 +151,67 @@ export class PauseMenu implements System {
     this.menu.querySelectorAll('button').forEach((button, index) => {
       button.classList.toggle('is-selected', index === this.navigator.index);
     });
+  }
+
+  private openJournal(mode: 'quests' | 'map'): void {
+    this.journalMode = mode;
+    this.menu.hidden = true;
+    this.journalView.hidden = false;
+    if (mode === 'quests') {
+      this.journalView.replaceChildren(
+        ...this.journal.questLines().map((line) => {
+          const row = document.createElement('p');
+          row.textContent = line;
+          return row;
+        }),
+      );
+      this.navigator.configure(0);
+    } else {
+      this.travelPoints = this.journal.travelPoints();
+      this.navigator.configure(this.travelPoints.length);
+      this.renderTravelPoints();
+    }
+    this.navigator.resetEdges();
+  }
+
+  private updateJournal(moved: boolean, confirmed: boolean, cancelled: boolean): void {
+    if (cancelled) {
+      this.closeJournal();
+      return;
+    }
+    if (this.journalMode !== 'map') return;
+    if (moved) this.renderTravelPoints();
+    if (!confirmed) return;
+    const point = this.travelPoints[this.navigator.index];
+    if (!point) return;
+    this.journal.travel(point.id);
+    this.closeJournal();
+    this.state.set('playing');
+  }
+
+  private renderTravelPoints(): void {
+    this.journalView.replaceChildren(
+      ...this.travelPoints.map((point, index) => {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.textContent = point.label;
+        row.classList.toggle('is-selected', index === this.navigator.index);
+        row.addEventListener('click', () => {
+          this.journal.travel(point.id);
+          this.closeJournal();
+          this.state.set('playing');
+        });
+        return row;
+      }),
+    );
+  }
+
+  private closeJournal(): void {
+    this.journalMode = null;
+    this.journalView.hidden = true;
+    this.menu.hidden = false;
+    this.navigator.resetEdges();
+    this.rebuildActions();
   }
 
   private openHelp(): void {

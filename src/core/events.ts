@@ -41,4 +41,11 @@ export interface GameEvents {
   'save:started': undefined;
   'save:completed': { reason: 'auto' | 'manual' };
   'save:loaded': undefined;
+  'quest:started': { questId: string };
+  'quest:progress': { questId: string };
+  'quest:readyToTurnIn': { questId: string };
+  'quest:completed': { questId: string };
+  'tower:activated': { towerId: string };
+  'boss:defeated': { bossId: string };
+  'story:chapter': { chapterId: string };
 }

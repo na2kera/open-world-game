@@ -62,6 +62,7 @@ export class Minimap {
   private readonly image: ImageData;
   private readonly previousRow = new Float32Array(MAP_RESOLUTION);
   private nextRow = 0;
+  private reveals: readonly { x: number; z: number; radius: number }[] = [];
   private readonly pixelRatio: number;
   private readonly markers = new Map<string, MinimapMarker>();
 
@@ -103,6 +104,11 @@ export class Minimap {
 
   clearMarkers(): void {
     this.markers.clear();
+  }
+
+  /** Circles of the world map that are not covered by the undiscovered fog. */
+  setReveals(circles: readonly { x: number; z: number; radius: number }[]): void {
+    this.reveals = circles;
   }
 
   /** Renders a few more world-map rows, then draws the view around (x, z). */
@@ -163,6 +169,7 @@ export class Minimap {
     ctx.fillRect(0, 0, size, size);
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(this.source, sx, sy, sourceRadius * 2, sourceRadius * 2, 0, 0, size, size);
+    this.drawFog(x, z);
     this.drawMarkers(x, z);
 
     // Player arrow: drawn pointing up, rotated so it matches the facing (screen y = world +z).
@@ -181,6 +188,26 @@ export class Minimap {
     ctx.lineWidth = this.pixelRatio * ARROW_STROKE_WIDTH;
     ctx.fill();
     ctx.stroke();
+    ctx.restore();
+  }
+
+  private drawFog(x: number, z: number): void {
+    if (this.reveals.length === 0) return;
+    const ctx = this.context;
+    const size = this.canvas.width;
+    const scale = size / (VIEW_RADIUS * 2);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, size, size);
+    for (const circle of this.reveals) {
+      const px = size / 2 + (circle.x - x) * scale;
+      const py = size / 2 + (circle.z - z) * scale;
+      const radius = circle.radius * scale;
+      ctx.moveTo(px + radius, py);
+      ctx.arc(px, py, radius, 0, Math.PI * 2);
+    }
+    ctx.fillStyle = 'rgba(6, 10, 16, 0.72)';
+    ctx.fill('evenodd');
     ctx.restore();
   }
 

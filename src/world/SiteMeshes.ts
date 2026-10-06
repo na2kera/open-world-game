@@ -1,0 +1,230 @@
+import {
+  BoxGeometry,
+  ConeGeometry,
+  CylinderGeometry,
+  Group,
+  Mesh,
+  MeshStandardMaterial,
+  type Scene,
+} from 'three';
+
+import { NPC_DEFS } from '../data/npcs';
+import type { WorldCollision } from './WorldCollision';
+import { placeLandmarks, type PlacedPoint } from './landmarkPlacement';
+import type { Platforms } from './Platforms';
+import type { Terrain, Vec3Like } from './Terrain';
+
+export interface TowerSite extends PlacedPoint {
+  readonly terminalX: number;
+  readonly terminalY: number;
+  readonly terminalZ: number;
+}
+
+export interface BuiltLandmarks {
+  readonly towers: readonly TowerSite[];
+  readonly shrine: PlacedPoint;
+  readonly arena: PlacedPoint;
+  readonly npcs: readonly {
+    id: string;
+    name: string;
+    x: number;
+    y: number;
+    z: number;
+    color: number;
+    scale: number;
+    hat: number;
+  }[];
+}
+
+const STAIR_STEPS = 26;
+const STAIR_RISE = 0.4;
+const STAIR_RADIUS = 3.3;
+
+/** Village, towers, shrine, arena and the objective beacon. All procedural. */
+export class Landmarks {
+  readonly group = new Group();
+  private readonly beacon: Mesh;
+  private readonly towerGlow = new Map<string, MeshStandardMaterial>();
+
+  constructor(
+    scene: Scene,
+    private readonly terrain: Terrain,
+    private readonly platforms: Platforms,
+    private readonly collision: WorldCollision,
+  ) {
+    this.group.name = 'landmarks';
+    scene.add(this.group);
+    this.beacon = new Mesh(
+      new CylinderGeometry(0.45, 0.45, 24, 8, 1, true),
+      new MeshStandardMaterial({
+        color: 0x7ec8ff,
+        emissive: 0x7ec8ff,
+        emissiveIntensity: 1.6,
+        transparent: true,
+        opacity: 0.28,
+        depthWrite: false,
+      }),
+    );
+    this.beacon.visible = false;
+    this.beacon.frustumCulled = false;
+    this.group.add(this.beacon);
+  }
+
+  build(spawn: Readonly<Vec3Like>): BuiltLandmarks {
+    this.buildVillage(spawn);
+    const placed = placeLandmarks(spawn.x, spawn.z, this.terrain);
+    const towers = placed.towers.map((tower) => this.buildTower(tower));
+    this.buildShrine(placed.shrine);
+    this.buildArena(placed.arena);
+    const npcs = NPC_DEFS.map((def) => {
+      const x = spawn.x + def.offsetX;
+      const z = spawn.z + def.offsetZ;
+      return {
+        id: def.id,
+        name: def.name,
+        x,
+        y: this.terrain.heightAt(x, z),
+        z,
+        color: def.color,
+        scale: def.scale,
+        hat: def.hat,
+      };
+    });
+    return { towers, shrine: placed.shrine, arena: placed.arena, npcs };
+  }
+
+  resetTowers(): void {
+    for (const material of this.towerGlow.values()) {
+      material.emissiveIntensity = 0.35;
+      material.color.setHex(0x6ea8c9);
+      material.emissive.setHex(0x6ea8c9);
+    }
+  }
+
+  setTowerActive(id: string): void {
+    const material = this.towerGlow.get(id);
+    if (!material) return;
+    material.emissiveIntensity = 2.4;
+    material.color.setHex(0xffe08a);
+    material.emissive.setHex(0xffe08a);
+  }
+
+  setGuide(point: Vec3Like | null): void {
+    this.beacon.visible = point !== null;
+    if (!point) return;
+    this.beacon.position.set(point.x, point.y + 12, point.z);
+  }
+
+  private buildVillage(spawn: Readonly<Vec3Like>): void {
+    const spots = [
+      { x: 14, z: 5 },
+      { x: -13, z: 7 },
+      { x: 5, z: -14 },
+      { x: -11, z: -11 },
+    ];
+    for (const spot of spots) {
+      const x = spawn.x + spot.x;
+      const z = spawn.z + spot.z;
+      const y = this.terrain.heightAt(x, z);
+      if (y < 1) continue;
+      this.hut(x, y, z);
+      this.collision.addCollider({ x, z, radius: 2.1, baseY: y, topY: y + 3.2 });
+    }
+  }
+
+  private hut(x: number, y: number, z: number): void {
+    const wall = new Mesh(
+      new BoxGeometry(3.2, 2.2, 3.2),
+      new MeshStandardMaterial({ color: 0xc4a574, roughness: 0.9 }),
+    );
+    wall.position.set(x, y + 1.1, z);
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    const roof = new Mesh(
+      new ConeGeometry(2.5, 1.6, 4),
+      new MeshStandardMaterial({ color: 0x8d3d32, roughness: 0.85 }),
+    );
+    roof.position.set(x, y + 2.9, z);
+    roof.rotation.y = Math.PI / 4;
+    roof.castShadow = true;
+    this.group.add(wall, roof);
+  }
+
+  private buildTower(point: PlacedPoint): TowerSite {
+    const { x, y, z, id } = point;
+    const shaft = new Mesh(
+      new CylinderGeometry(1.15, 1.45, 16, 8),
+      new MeshStandardMaterial({ color: 0x8d97a3, roughness: 0.72 }),
+    );
+    shaft.position.set(x, y + 8, z);
+    shaft.castShadow = true;
+    this.group.add(shaft);
+    this.collision.addCollider({ x, z, radius: 1.25, baseY: y, topY: y + 16 });
+    const glowMaterial = new MeshStandardMaterial({
+      color: 0x6ea8c9,
+      emissive: 0x6ea8c9,
+      emissiveIntensity: 0.35,
+      roughness: 0.4,
+    });
+    this.towerGlow.set(id, glowMaterial);
+    const ring = new Mesh(new CylinderGeometry(1.7, 1.7, 0.28, 12), glowMaterial);
+    let terminalX = x;
+    let terminalY = y + 1.2;
+    let terminalZ = z;
+    for (let step = 0; step < STAIR_STEPS; step++) {
+      const angle = step * 0.34;
+      const topY = y + (step + 1) * STAIR_RISE;
+      const sx = x + Math.cos(angle) * STAIR_RADIUS;
+      const sz = z + Math.sin(angle) * STAIR_RADIUS;
+      const tread = new Mesh(
+        new BoxGeometry(2.4, 0.22, 2.1),
+        new MeshStandardMaterial({ color: 0xb7c0c8, roughness: 0.8 }),
+      );
+      tread.position.set(sx, topY, sz);
+      tread.rotation.y = -angle;
+      tread.castShadow = true;
+      this.group.add(tread);
+      this.platforms.add({ x: sx, z: sz, topY, halfX: 1.2, halfZ: 1.05, yaw: -angle });
+      if (step === STAIR_STEPS - 1) {
+        terminalX = sx;
+        terminalY = topY;
+        terminalZ = sz;
+        ring.position.set(sx, topY + 1.1, sz);
+      }
+    }
+    this.group.add(ring);
+    return { ...point, terminalX, terminalY, terminalZ };
+  }
+
+  private buildShrine(point: PlacedPoint): void {
+    const stone = new MeshStandardMaterial({ color: 0x9aa3ad, roughness: 0.85 });
+    const base = new Mesh(new BoxGeometry(3.4, 1.4, 3.4), stone);
+    base.position.set(point.x, point.y + 0.7, point.z);
+    base.castShadow = true;
+    const slab = new Mesh(new BoxGeometry(1.2, 0.8, 1.2), stone);
+    slab.position.set(point.x, point.y + 1.8, point.z);
+    this.group.add(base, slab);
+    this.collision.addCollider({
+      x: point.x,
+      z: point.z,
+      radius: 1.6,
+      baseY: point.y,
+      topY: point.y + 1.5,
+    });
+  }
+
+  private buildArena(point: PlacedPoint): void {
+    const stone = new MeshStandardMaterial({ color: 0x6e6258, roughness: 0.9 });
+    for (let index = 0; index < 8; index++) {
+      const angle = (index / 8) * Math.PI * 2;
+      const pillar = new Mesh(new CylinderGeometry(0.45, 0.55, 5, 6), stone);
+      pillar.position.set(
+        point.x + Math.cos(angle) * 10,
+        point.y + 2.5,
+        point.z + Math.sin(angle) * 10,
+      );
+      pillar.castShadow = true;
+      this.group.add(pillar);
+    }
+  }
+}

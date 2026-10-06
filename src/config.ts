@@ -224,3 +224,12 @@ export const COMBAT_CONFIG = {
 export const ENEMY_ACTIVE_DISTANCE = 250;
 export const ENEMY_CAMP_CELL_SIZE = 256;
 export const SAVE_INTERVAL_SEC = 60;
+
+/** No enemy camps or night wisps spawn inside this radius of the village. */
+export const VILLAGE_SAFE_RADIUS = 90;
+/** Minimap fog clears this far around an awakened tower. */
+export const TOWER_REVEAL_RADIUS = 450;
+/** Minimap fog is clear around the starting village. */
+export const VILLAGE_REVEAL_RADIUS = 180;
+/** How far above the feet a platform can be and still count as a step. */
+export const PLATFORM_STEP_SNAP = 0.7;

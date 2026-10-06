@@ -79,6 +79,19 @@ export const ENEMY_DEFS = [
     ],
     appearance: { color: 0x6b4aa5, accent: 0xcfb6ff, scale: 0.78, floating: true },
   },
+  {
+    id: 'blight-lord',
+    name: '禍の王',
+    hp: 48,
+    attack: 6,
+    speed: 3.1,
+    aggroRadius: 28,
+    attackRange: 2.6,
+    attackCooldown: 1.35,
+    drops: [{ itemId: 'ancient-gear', chance: 1, min: 1, max: 1 }],
+    appearance: { color: 0x6a2148, accent: 0xf0c341, scale: 2.15 },
+    boss: true,
+  },
 ] as const satisfies readonly EnemyDef[];
 
 const ENEMY_BY_ID = new Map<string, EnemyDef>(ENEMY_DEFS.map((enemy) => [enemy.id, enemy]));
