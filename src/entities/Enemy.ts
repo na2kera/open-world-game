@@ -1,16 +1,12 @@
 import {
   BufferAttribute,
   BufferGeometry,
-  CapsuleGeometry,
-  ConeGeometry,
   Group,
-  IcosahedronGeometry,
-  Mesh,
-  MeshStandardMaterial,
   Points,
   PointsMaterial,
-  SphereGeometry,
   Vector3,
+  type Color,
+  type MeshStandardMaterial,
 } from 'three';
 
 import type { EventBus } from '../core/EventBus';
@@ -19,6 +15,8 @@ import type { EnemyDef, EnemyState } from '../data/enemies';
 import type { PlayerController } from '../player/PlayerController';
 import type { Terrain } from '../world/Terrain';
 import type { WorldLabelHandle, WorldLabelLayer } from '../ui/WorldLabelLayer';
+import { damp } from '../utils/math';
+import { buildEnemyRig, GOBLIN, type EnemyRig } from './enemyMesh';
 
 export interface EnemyOptions {
   readonly id: string;
@@ -39,6 +37,49 @@ const HURT_SECONDS = 0.22;
 const DEATH_SECONDS = 0.85;
 const PATROL_RADIUS = 6;
 const ALERT_SECONDS = 0.9;
+const HURT_FLASH_INTENSITY = 2.5;
+
+/** Animation tuning (radians / seconds / units at scale 1). */
+const ANIM = {
+  /** Gait phase radians per unit travelled. */
+  strideRate: 2.6,
+  /** Horizontal speed below which the enemy counts as standing. */
+  minSpeed: 0.05,
+  legSwing: 0.6,
+  armSwing: 0.35,
+  bob: 0.05,
+  breathRate: 2.2,
+  breath: 0.015,
+  /** Club arm raised overhead over the windup. */
+  windupArm: -2.2,
+  windupOffArm: -0.3,
+  /** Club arm at the end of the strike: forward and down, toward the target. */
+  strikeArm: -0.5,
+  strikeLambda: 40,
+  hurtHeadPitch: -0.45,
+  lambda: 12,
+  wingRate: 9,
+  wingRest: 0.15,
+  wingFlap: 0.55,
+  wispSwayRate: 1.7,
+  wispSway: 0.08,
+} as const;
+
+interface EnemyPose {
+  leftLeg: number;
+  rightLeg: number;
+  leftArm: number;
+  rightArm: number;
+  bob: number;
+  headPitch: number;
+  headLift: number;
+}
+
+function createPose(): EnemyPose {
+  return { leftLeg: 0, rightLeg: 0, leftArm: 0, rightArm: 0, bob: 0, headPitch: 0, headLift: 0 };
+}
+
+const REST_POSE: Readonly<EnemyPose> = createPose();
 
 /** Procedural enemy with a compact fixed-step state machine. */
 export class Enemy {
@@ -59,6 +100,17 @@ export class Enemy {
   private alertTimer = 0;
   private smoke: Points<BufferGeometry, PointsMaterial> | null = null;
   private hurtFlash = 0;
+  private readonly geometries: BufferGeometry[] = [];
+  private readonly emissiveBase: {
+    readonly material: MeshStandardMaterial;
+    readonly color: Color;
+    readonly intensity: number;
+  }[] = [];
+  private readonly rig: EnemyRig;
+  private readonly pose = createPose();
+  private readonly poseTarget = createPose();
+  private phase = 0;
+  private animTime = 0;
 
   constructor(private readonly options: EnemyOptions) {
     this.id = options.id;
@@ -68,7 +120,7 @@ export class Enemy {
     this.root.position.set(options.x, y, options.z);
     this.origin.copy(this.root.position);
     this.root.name = `enemy:${this.id}`;
-    this.buildMesh();
+    this.rig = this.buildMesh();
 
     this.hpLabel = options.labels.add({
       className: 'enemy-hp',
@@ -109,6 +161,8 @@ export class Enemy {
       return;
     }
 
+    const startX = this.position.x;
+    const startZ = this.position.z;
     const player = this.options.player.position;
     const dx = player.x - this.position.x;
     const dz = player.z - this.position.z;
@@ -155,6 +209,8 @@ export class Enemy {
         break;
     }
     this.followTerrain(dt);
+    const travelled = Math.hypot(this.position.x - startX, this.position.z - startZ);
+    this.animate(dt, dt > 0 ? travelled / dt : 0);
   }
 
   damage(amount: number, source: Readonly<Vector3>): boolean {
@@ -184,11 +240,7 @@ export class Enemy {
   dispose(): void {
     this.hpLabel.remove();
     this.alertLabel.remove();
-    const geometries = new Set<BufferGeometry>();
-    this.root.traverse((object) => {
-      if (object instanceof Mesh) geometries.add(object.geometry);
-    });
-    for (const geometry of geometries) geometry.dispose();
+    for (const geometry of this.geometries) geometry.dispose();
     for (const material of this.materials) material.dispose();
     this.smoke?.geometry.dispose();
     this.smoke?.material.dispose();
@@ -264,10 +316,16 @@ export class Enemy {
 
   private updateFlash(dt: number): void {
     this.hurtFlash = Math.max(0, this.hurtFlash - dt);
-    const intensity = this.hurtFlash > 0 ? 2.5 : 0;
-    for (const material of this.materials) {
-      material.emissive.setHex(0xffffff);
-      material.emissiveIntensity = intensity;
+    const flashing = this.hurtFlash > 0;
+    // Flash white, otherwise restore each material's own glow (wisp core / eyes).
+    for (const base of this.emissiveBase) {
+      if (flashing) {
+        base.material.emissive.setHex(0xffffff);
+        base.material.emissiveIntensity = HURT_FLASH_INTENSITY;
+      } else {
+        base.material.emissive.copy(base.color);
+        base.material.emissiveIntensity = base.intensity;
+      }
     }
   }
 
@@ -279,61 +337,76 @@ export class Enemy {
     return out.copy(this.position).add(tmpLabel.set(0, height, 0));
   }
 
-  private buildMesh(): void {
-    const scale = this.def.appearance.scale;
-    const bodyMaterial = this.material(this.def.appearance.color);
-    const accentMaterial = this.material(this.def.appearance.accent);
-    const eye = this.material(0x1c140f);
-    if (this.def.appearance.floating) {
-      const body = new Mesh(new IcosahedronGeometry(0.72 * scale, 1), bodyMaterial);
-      const core = new Mesh(new IcosahedronGeometry(0.28 * scale, 1), accentMaterial);
-      const leftWing = new Mesh(new ConeGeometry(0.42 * scale, 1.05 * scale, 4), accentMaterial);
-      const rightWing = leftWing.clone();
-      leftWing.position.set(0.85 * scale, 0.1 * scale, 0);
-      rightWing.position.set(-0.85 * scale, 0.1 * scale, 0);
-      leftWing.rotation.z = -Math.PI / 2;
-      rightWing.rotation.z = Math.PI / 2;
-      const leftEye = new Mesh(new SphereGeometry(0.08 * scale, 8, 6), eye);
-      const rightEye = leftEye.clone();
-      leftEye.position.set(0.18 * scale, 0.16 * scale, 0.55 * scale);
-      rightEye.position.set(-0.18 * scale, 0.16 * scale, 0.55 * scale);
-      this.root.add(body, core, leftWing, rightWing, leftEye, rightEye);
-    } else {
-      const body = new Mesh(new SphereGeometry(0.55 * scale, 14, 10), bodyMaterial);
-      body.position.y = 0.72 * scale;
-      body.scale.set(1.05, 1.2, 0.9);
-      const head = new Mesh(new SphereGeometry(0.42 * scale, 14, 10), bodyMaterial);
-      head.position.y = 1.52 * scale;
-      const snout = new Mesh(new ConeGeometry(0.16 * scale, 0.38 * scale, 6), bodyMaterial);
-      snout.position.set(0, 1.42 * scale, 0.38 * scale);
-      snout.rotation.x = Math.PI / 2;
-      const leftEar = new Mesh(new ConeGeometry(0.16 * scale, 0.55 * scale, 5), accentMaterial);
-      const rightEar = leftEar.clone();
-      leftEar.position.set(0.42 * scale, 1.72 * scale, 0);
-      rightEar.position.set(-0.42 * scale, 1.72 * scale, 0);
-      leftEar.rotation.z = -0.4;
-      rightEar.rotation.z = 0.4;
-      const leftEye = new Mesh(new SphereGeometry(0.07 * scale, 8, 6), eye);
-      const rightEye = leftEye.clone();
-      leftEye.position.set(0.14 * scale, 1.58 * scale, 0.34 * scale);
-      rightEye.position.set(-0.14 * scale, 1.58 * scale, 0.34 * scale);
-      const arm = new Mesh(new CapsuleGeometry(0.09 * scale, 0.28 * scale, 3, 6), bodyMaterial);
-      const otherArm = arm.clone();
-      arm.position.set(0.48 * scale, 0.85 * scale, 0.05 * scale);
-      otherArm.position.set(-0.48 * scale, 0.85 * scale, 0.05 * scale);
-      arm.rotation.z = 0.5;
-      otherArm.rotation.z = -0.5;
-      this.root.add(body, head, snout, leftEar, rightEar, leftEye, rightEye, arm, otherArm);
+  private buildMesh(): EnemyRig {
+    const rig = buildEnemyRig(this.def, this.materials, this.geometries);
+    this.root.add(rig.container);
+    for (const material of this.materials) {
+      this.emissiveBase.push({
+        material,
+        color: material.emissive.clone(),
+        intensity: material.emissiveIntensity,
+      });
     }
-    this.root.traverse((object) => {
-      if (object instanceof Mesh) object.castShadow = true;
-    });
+    return rig;
   }
 
-  private material(color: number): MeshStandardMaterial {
-    const material = new MeshStandardMaterial({ color, roughness: 0.78 });
-    this.materials.push(material);
-    return material;
+  /** Procedural gait / attack posing. Runs after movement each tick. */
+  private animate(dt: number, horizontalSpeed: number): void {
+    const rig = this.rig;
+    const pose = this.pose;
+    this.animTime += dt;
+    if (rig.leftWing && rig.rightWing) {
+      const flap = ANIM.wingRest + Math.sin(this.animTime * ANIM.wingRate) * ANIM.wingFlap;
+      rig.leftWing.rotation.z = flap;
+      rig.rightWing.rotation.z = -flap;
+      rig.body.rotation.z = Math.sin(this.animTime * ANIM.wispSwayRate) * ANIM.wispSway;
+      return;
+    }
+
+    const target = this.poseTarget;
+    Object.assign(target, REST_POSE);
+    const walking =
+      (this.state === 'patrol' || this.state === 'chase') && horizontalSpeed > ANIM.minSpeed;
+    if (walking) {
+      this.phase += (horizontalSpeed * ANIM.strideRate * dt) / this.def.appearance.scale;
+      const amount = Math.min(1, horizontalSpeed / this.def.speed);
+      const swing = Math.sin(this.phase);
+      target.leftLeg = swing * ANIM.legSwing * amount;
+      target.rightLeg = -swing * ANIM.legSwing * amount;
+      target.leftArm = -swing * ANIM.armSwing * amount;
+      target.rightArm = swing * ANIM.armSwing * amount;
+      target.bob = -Math.abs(Math.cos(this.phase)) * ANIM.bob * amount;
+    } else {
+      target.headLift = Math.sin(this.animTime * ANIM.breathRate) * ANIM.breath;
+    }
+    let armLambda: number = ANIM.lambda;
+    if (this.state === 'windup') {
+      target.rightArm = ANIM.windupArm * Math.min(1, this.stateTimer / WINDUP_SECONDS);
+      target.leftArm = ANIM.windupOffArm;
+    } else if (this.state === 'attack') {
+      target.rightArm = ANIM.strikeArm;
+      armLambda = ANIM.strikeLambda;
+    } else if (this.state === 'hurt') {
+      target.headPitch = ANIM.hurtHeadPitch;
+    }
+
+    pose.leftLeg = damp(pose.leftLeg, target.leftLeg, ANIM.lambda, dt);
+    pose.rightLeg = damp(pose.rightLeg, target.rightLeg, ANIM.lambda, dt);
+    pose.leftArm = damp(pose.leftArm, target.leftArm, ANIM.lambda, dt);
+    pose.rightArm = damp(pose.rightArm, target.rightArm, armLambda, dt);
+    pose.bob = damp(pose.bob, target.bob, ANIM.lambda, dt);
+    pose.headPitch = damp(pose.headPitch, target.headPitch, ANIM.lambda, dt);
+    pose.headLift = damp(pose.headLift, target.headLift, ANIM.lambda, dt);
+
+    if (rig.leftLeg) rig.leftLeg.rotation.x = pose.leftLeg;
+    if (rig.rightLeg) rig.rightLeg.rotation.x = pose.rightLeg;
+    if (rig.leftArm) rig.leftArm.rotation.x = pose.leftArm;
+    if (rig.rightArm) rig.rightArm.rotation.x = pose.rightArm;
+    rig.body.position.y = GOBLIN.hipHeight + pose.bob;
+    if (rig.head) {
+      rig.head.rotation.x = pose.headPitch;
+      rig.head.position.y = GOBLIN.neckY + pose.headLift;
+    }
   }
 
   private createSmoke(): void {

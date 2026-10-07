@@ -26,6 +26,9 @@ const COLORS = {
   pants: 0xe0d6b8,
   boots: 0x5a3b22,
   belt: 0x4a2e1a,
+  hairStyle: 'short',
+  trim: 0xe8dcc0,
+  sleeves: 0x2f6fb5,
 } as const;
 
 /** Animation tuning. */

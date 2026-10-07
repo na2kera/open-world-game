@@ -362,6 +362,7 @@ export class Game {
     window.removeEventListener('resize', this.handleResize);
     document.removeEventListener('visibilitychange', this.handleVisibility);
     for (const system of this.systems) system.dispose?.();
+    this.landmarks.dispose();
     this.input.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();

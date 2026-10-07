@@ -40,26 +40,44 @@ function createTerrainMaterial(): MeshStandardMaterial {
         `#include <common>
          varying vec3 vTerrainWorld;
          float terrainHash(vec2 p) {
-           return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-         }`,
+           p = fract(p * vec2(0.1031, 0.1030));
+           p += dot(p, p.yx + 33.33);
+           return fract((p.x + p.y) * p.x);
+         }
+         // Smooth 2-D value noise in [0, 1]: hashed lattice corners, smoothstep interpolation.
+         float terrainNoise(vec2 p) {
+           vec2 i = floor(p);
+           vec2 f = fract(p);
+           vec2 u = f * f * (3.0 - 2.0 * f);
+           float a = terrainHash(i);
+           float b = terrainHash(i + vec2(1.0, 0.0));
+           float c = terrainHash(i + vec2(0.0, 1.0));
+           float d = terrainHash(i + vec2(1.0, 1.0));
+           return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+         }
+         const float TERRAIN_LOW_FREQ = 0.08;
+         const float TERRAIN_HIGH_FREQ = 0.6;`,
       )
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
-         vec2 cell = floor(vTerrainWorld.xz * 0.22);
-         float blotch = terrainHash(cell);
-         float grain = terrainHash(vTerrainWorld.xz * 4.0);
-         diffuseColor.rgb *= 0.95 + 0.06 * blotch + 0.03 * grain;`,
+         // Two octaves of smooth noise: ±6% brightness. terrainLow is reused for the normal.
+         vec2 terrainLowP = vTerrainWorld.xz * TERRAIN_LOW_FREQ;
+         float terrainLow = terrainNoise(terrainLowP);
+         float detail = 0.65 * terrainLow + 0.35 * terrainNoise(vTerrainWorld.xz * TERRAIN_HIGH_FREQ);
+         diffuseColor.rgb *= 1.0 + (detail - 0.5) * 0.12;`,
       )
       .replace(
         '#include <normal_fragment_begin>',
         `#include <normal_fragment_begin>
-         vec2 slopeCell = floor(vTerrainWorld.xz * 0.45);
-         normal = normalize(normal + vec3(
-           (terrainHash(slopeCell) - 0.5) * 0.18,
-           0.0,
-           (terrainHash(slopeCell.yx) - 0.5) * 0.18
-         ));`,
+         // Gentle undulation from the low-octave gradient (forward differences, view space).
+         const float nudgeStep = 0.05;
+         vec2 nudgeGrad = vec2(
+           terrainNoise(terrainLowP + vec2(nudgeStep, 0.0)) - terrainLow,
+           terrainNoise(terrainLowP + vec2(0.0, nudgeStep)) - terrainLow
+         ) * (TERRAIN_LOW_FREQ / nudgeStep);
+         vec3 nudge = clamp(vec3(-nudgeGrad.x, 0.0, -nudgeGrad.y) * 0.8, -0.1, 0.1);
+         normal = normalize(normal + (viewMatrix * vec4(nudge, 0.0)).xyz);`,
       );
   };
   return material;
